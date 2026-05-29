@@ -71,7 +71,71 @@ bool RenderStreamLink::loadExplicit()
         return true;
 
 #ifdef WINDOWS
-    
+    auto LogFatalIfNotInEditor = [](const FString& msg)
+    {
+        if (!GIsEditor)
+            UE_LOG(LogRenderStream, Fatal, TEXT("RenderStream instance cannot launch, the app will exit to avoid other RenderStram errors during runtime. Reason: %s"), *msg);
+    };
+
+#if RS2_UE53_CUSTOM
+    // Customized version: load renderstream.dll from plugin directory
+    TArray<FString> candidateDllPaths;
+    if (TSharedPtr<IPlugin> RSPlugin = IPluginManager::Get().FindPlugin(TEXT("RenderStream-UE")); RSPlugin.IsValid())
+    {
+        const FString BaseDir = RSPlugin->GetBaseDir();
+        static const TCHAR* RelativeCandidates[] = {
+            TEXT("Binaries/Win64/renderstream.dll"),
+            TEXT("Binaries/ThirdParty/Win64/renderstream.dll"),
+        };
+        for (const TCHAR* Rel : RelativeCandidates)
+        {
+            const FString full = FPaths::ConvertRelativePathToFull(FPaths::Combine(BaseDir, Rel));
+            if (FPaths::FileExists(full))
+                candidateDllPaths.AddUnique(full);
+        }
+        if (candidateDllPaths.Num() == 0)
+        {
+            UE_LOG(LogRenderStream, Error, TEXT("renderstream.dll not found under RenderStream-UE (%s). Place it (and its dependent DLLs) in Binaries/Win64 or Binaries/ThirdParty/Win64."), *BaseDir);
+        }
+    }
+    else
+    {
+        UE_LOG(LogRenderStream, Error, TEXT("RenderStream-UE plugin is not registered (IPluginManager::FindPlugin failed)."));
+    }
+
+    if (candidateDllPaths.Num() == 0)
+    {
+        UE_LOG(LogRenderStream, Error, TEXT("No renderstream.dll found under the RenderStream-UE plugin directory."));
+        LogFatalIfNotInEditor("RenderStream DLL not found.");
+        return false;
+    }
+
+    FString customDllPath;
+    for (const FString& tryPath : candidateDllPaths)
+    {
+        const FString dllDir = FPaths::GetPath(tryPath);
+        FPlatformProcess::AddDllDirectory(*dllDir);
+        UE_LOG(LogRenderStream, Log, TEXT("Loading RenderStream DLL (try): %s"), *tryPath);
+        m_dll = FPlatformProcess::GetDllHandle(*tryPath);
+        if (m_dll != nullptr)
+        {
+            customDllPath = tryPath;
+            break;
+        }
+        std::error_code e = std::error_code(GetLastError(), std::system_category());
+        UE_LOG(LogRenderStream, Warning, TEXT("Load failed for %s — %s (%i). Trying next candidate if any."), *tryPath, *FString(e.message().c_str()), e.value());
+    }
+
+    if (m_dll == nullptr)
+    {
+        UE_LOG(LogRenderStream, Error, TEXT("Could not load renderstream.dll from any candidate path."));
+        LogFatalIfNotInEditor("RenderStream DLL could not be loaded.");
+        return false;
+    }
+
+    UE_LOG(LogRenderStream, Log, TEXT("Loaded RenderStream DLL from %s."), *customDllPath);
+#else
+    // Original: load d3renderstream.dll from d3 install directory (registry)
     auto GetD3PathFromReg = []() -> FString
     {
         HKEY hKey;
@@ -109,12 +173,6 @@ bool RenderStreamLink::loadExplicit()
         return false;
     }
 
-    auto LogFatalIfNotInEditor = [](const FString& msg)
-    {
-        if (!GIsEditor)
-            UE_LOG(LogRenderStream, Fatal, TEXT("RenderStream instance cannot launch, the app will exit to avoid other RenderStram errors during runtime. Reason: %s"), *msg);
-    };
-
     UE_LOG(LogRenderStream, Log, TEXT("Loading RenderStream dll at %s."), *dllPath);
     m_dll = LoadLibraryEx(*dllPath, NULL, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_APPLICATION_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32 | LOAD_LIBRARY_SEARCH_USER_DIRS);
     if (m_dll == nullptr)
@@ -125,7 +183,7 @@ bool RenderStreamLink::loadExplicit()
         LogFatalIfNotInEditor("RenderStream DLL could not be loaded.");
         return false;
     }
-
+#endif
     auto loadFn = [&](auto& fn, const auto& fnName)
     {
         fn = (std::decay_t<decltype(fn)>)FPlatformProcess::GetDllExport(m_dll, fnName);
@@ -148,8 +206,14 @@ bool RenderStreamLink::loadExplicit()
     LOAD_FN(rs_initialise);
     LOAD_FN(rs_initialiseGpGpuWithDX11Device);
     LOAD_FN(rs_initialiseGpGpuWithDX12DeviceAndQueue);
+#if RS2_UE53_CUSTOM
+    // OpenGL/Vulkan GPGPU init not supported in customized version DLL currently
+    // LOAD_FN(rs_initialiseGpGpuWithOpenGlContexts);
+    // LOAD_FN(rs_initialiseGpGpuWithVulkanDevice);
+#else
     LOAD_FN(rs_initialiseGpGpuWithOpenGlContexts);
     LOAD_FN(rs_initialiseGpGpuWithVulkanDevice);
+#endif
     LOAD_FN(rs_shutdown);
 
     LOAD_FN(rs_registerLoggingFunc);
