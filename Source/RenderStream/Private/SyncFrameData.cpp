@@ -145,6 +145,9 @@ void FRenderStreamSyncFrameData::ControllerReceive()
 
         LastTrackedTime = m_frameData.tTracked;
 
+        // 3600 x speed if written as below, which is a common mistake when frame rate is expressed as denominator over numerator.
+        // DeltaSeconds = static_cast<float>(m_frameData.frameRateNumerator) / m_frameData.frameRateDenominator;
+
         FApp::SetFixedDeltaTime(DeltaSeconds);
 
         m_frameDataValid = true;

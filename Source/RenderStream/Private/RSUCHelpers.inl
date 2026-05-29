@@ -160,7 +160,12 @@ namespace RSUCHelpers
             RenderStreamLink::FrameResponseData Response = {};
             Response.cameraData = &FrameData;
 
+#if RS2_UE53_CUSTOM
+            RenderStreamLink::NvUECameraData ueCameraData = FrameData.camera.mxCameraData;
+            auto output = RenderStreamLink::instance().rs_sendFrame2(Handle, data.dx11.resource, &Response, &ueCameraData);
+#else
             auto output = RenderStreamLink::instance().rs_sendFrame2(Handle, &data, &Response);
+#endif
             if (output != RenderStreamLink::RS_ERROR_SUCCESS)
             {
                 UE_LOG(LogRenderStream, Log, TEXT("Failed to send frame: %d"), output);
@@ -181,7 +186,12 @@ namespace RSUCHelpers
             Response.cameraData = &FrameData;
             {
                 SCOPED_DRAW_EVENTF(RHICmdList, MediaCapture, TEXT("rs_sendFrame2"));
+#if RS2_UE53_CUSTOM
+                RenderStreamLink::NvUECameraData ueCameraData = FrameData.camera.mxCameraData;
+                auto output = RenderStreamLink::instance().rs_sendFrame2(Handle, data.dx12.resource, &Response, &ueCameraData);
+#else
                 auto output = RenderStreamLink::instance().rs_sendFrame2(Handle, &data, &Response);
+#endif
                 if (output != RenderStreamLink::RS_ERROR_SUCCESS)
                 {
                     UE_LOG(LogRenderStream, Log, TEXT("Failed to send frame: %d"), output);
@@ -234,7 +244,12 @@ namespace RSUCHelpers
             Response.cameraData = &FrameData;
             {
                 SCOPED_DRAW_EVENTF(RHICmdList, MediaCapture, TEXT("rs_sendFrame2"));
+#if RS2_UE53_CUSTOM
+                RenderStreamLink::NvUECameraData ueCameraData = FrameData.camera.mxCameraData;
+                auto output = RenderStreamLink::instance().rs_sendFrame2(Handle, &data, &Response, &ueCameraData);
+#else
                 auto output = RenderStreamLink::instance().rs_sendFrame2(Handle, &data, &Response);
+#endif
                 if (output != RenderStreamLink::RS_ERROR_SUCCESS)
                 {
                     UE_LOG(LogRenderStream, Log, TEXT("Failed to send frame: %d"), output);

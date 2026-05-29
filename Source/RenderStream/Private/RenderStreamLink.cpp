@@ -253,6 +253,10 @@ bool RenderStreamLink::loadExplicit()
     LOAD_FN(rs_logToD3);
     LOAD_FN(rs_sendProfilingData);
     LOAD_FN(rs_setNewStatusMessage);
+#if RS2_UE53_CUSTOM
+    // Optional export — failure does not break loading chain
+    rs_start_camera_udp = reinterpret_cast<rs_start_camera_udpFn*>(FPlatformProcess::GetDllExport(m_dll, TEXT("rs_start_camera_udp")));
+#endif
 
     m_loaded = true;
 

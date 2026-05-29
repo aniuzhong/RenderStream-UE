@@ -130,6 +130,10 @@ bool FRenderStreamProjectionPolicy::GetProjectionMatrix(class IDisplayClusterVie
 
     // Center shift
     FVector centerShift = { 0.f, 0.f, 0.f };
+#if RS2_UE53_CUSTOM
+    // === RS2_UE53_CUSTOM:
+    // Do not apply centerShift for now (Avoid jittering of projection matrix)
+#else
     {
         std::lock_guard<std::mutex> guard(Info.m_frameResponsesLock);
         uint64 frameCounter = GFrameCounter;
@@ -140,6 +144,7 @@ bool FRenderStreamProjectionPolicy::GetProjectionMatrix(class IDisplayClusterVie
             centerShift = { thisFrameResponse.camera.cx, thisFrameResponse.camera.cy, 0.f };
         }
     }
+#endif
 
     auto Stream = Module->StreamPool->GetStream(ViewportId);
     // Clipping

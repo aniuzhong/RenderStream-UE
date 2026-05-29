@@ -4,6 +4,11 @@
 
 void SceneSelector_Maps::ApplyScene(const UWorld& world, uint32_t sceneId)
 {
+#if RS2_UE53_CUSTOM
+    // === RS2_UE53_CUSTOM: 
+    // Do not perform scene parameter control.
+    // Levels are managed by Unreal's default loading mechanism, no need for RenderStream to switch or validate parameters.
+#else
     if (sceneId >= m_maps.size())
     {
         UE_LOG(LogRenderStream, Error, TEXT("SceneID out of range for ApplyScene"));
@@ -50,6 +55,7 @@ void SceneSelector_Maps::ApplyScene(const UWorld& world, uint32_t sceneId)
             break;
         }
     }
+#endif
 }
 
 bool SceneSelector_Maps::OnLoadedSchema(const UWorld& World, const RenderStreamLink::Schema& Schema)

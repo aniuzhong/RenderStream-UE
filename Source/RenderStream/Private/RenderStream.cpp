@@ -212,6 +212,13 @@ void FRenderStreamModule::StartupModule()
             return;
         }
         
+#if RS2_UE53_CUSTOM
+        if (RenderStreamLink::instance().rs_start_camera_udp)
+        {
+            RenderStreamLink::instance().rs_start_camera_udp(37021);
+        }
+#endif
+
         FCoreDelegates::OnHandleSystemError.AddRaw(this, &FRenderStreamModule::OnSystemError);
 
         FCoreUObjectDelegates::PostLoadMapWithWorld.AddRaw(this, &FRenderStreamModule::OnPostLoadMapWithWorld);
@@ -466,6 +473,30 @@ bool FRenderStreamModule::PopulateStreamPool()
 
     if (RenderStreamLink::instance().isAvailable())
     {
+#if RS2_UE53_CUSTOM
+        RenderStreamLink::StreamDescription tmp;
+        uint32_t nBytes = 0;
+        RenderStreamLink::RS_ERROR res = RenderStreamLink::instance().rs_getStreams(tmp, &nBytes, 0);
+
+        if (res != RenderStreamLink::RS_ERROR_SUCCESS)
+            return false;
+
+        RenderStreamLink::StreamDescriptions strDesc;
+        strDesc.nStreams = nBytes;
+        strDesc.streams.resize(nBytes);
+        for (uint32_t i = 0; i < nBytes; i++)
+        {
+            res = RenderStreamLink::instance().rs_getStreams(strDesc.streams[i], &nBytes, i);
+        }
+
+        if (res != RenderStreamLink::RS_ERROR_SUCCESS)
+            return false;
+
+        TArray<FStreamInfo> streamInfoArray;
+        for (uint32_t i = 0; i < strDesc.nStreams; ++i)
+        {
+            const RenderStreamLink::StreamDescription& description = strDesc.streams[i];
+#else
         std::vector<uint8_t> descMem;
         uint32_t nBytes = 0;
         RenderStreamLink::instance().rs_getStreams(nullptr, &nBytes);
@@ -495,6 +526,7 @@ bool FRenderStreamModule::PopulateStreamPool()
         for (size_t i = 0; i < numStreams; ++i)
         {
             const RenderStreamLink::StreamDescription& description = header->streams[i];
+#endif
             const FString Name(description.name);
             const FIntPoint Resolution(description.width, description.height);
             const FString Channel(description.channel);
@@ -577,8 +609,17 @@ void FRenderStreamModule::ApplyCameras(const RenderStreamLink::FrameData& frameD
             continue;
 
         RenderStreamLink::CameraData cameraData;
+#if RS2_UE53_CUSTOM
+        RenderStreamLink::NvUECameraData nvUeData = {};
+        if (RenderStreamLink::instance().rs_getFrameCamera(stream->Handle(), &cameraData, &nvUeData) == RenderStreamLink::RS_ERROR_SUCCESS)
+        {
+            cameraData.mxCameraData = nvUeData;
+            ApplyCameraData(*pair.Value, frameData, cameraData);
+        }
+#else
         if (RenderStreamLink::instance().rs_getFrameCamera(stream->Handle(), &cameraData) == RenderStreamLink::RS_ERROR_SUCCESS)
             ApplyCameraData(*pair.Value, frameData, cameraData);
+#endif
     }
 }
 
@@ -627,9 +668,14 @@ void FRenderStreamModule::ApplyCameraData(FRenderStreamViewportInfo& info, const
     }
     else if (CameraComponent)
     {
+#if RS2_UE53_CUSTOM
+        // === RS2_UE53_CUSTOM: Use FOV from UDP directly
+        CameraComponent->SetFieldOfView(cameraData.mxCameraData.fovH);
+#else
         float throwRatioH = cameraData.focalLength / cameraData.sensorX;
         float fovH = 2.f * FMath::Atan(0.5f / throwRatioH);
         CameraComponent->SetFieldOfView(fovH * 180.f / PI);
+#endif
         CameraComponent->SetAspectRatio(cameraData.sensorX / cameraData.sensorY);
     }
 
@@ -643,9 +689,17 @@ void FRenderStreamModule::ApplyCameraData(FRenderStreamViewportInfo& info, const
 
         // NB SceneComponent pos appears to be in Centimeters, whatever distance units are set in the project settings
         FVector pos;
+#if RS2_UE53_CUSTOM
+        // === RS2_UE53_CUSTOM:
+        // UDP data is already in UE units (cm), no conversion needed
+        pos.X = FUnitConversion::Convert(float(cameraData.z), EUnit::Meters, EUnit::Meters);
+        pos.Y = FUnitConversion::Convert(float(cameraData.x), EUnit::Meters, EUnit::Meters);
+        pos.Z = FUnitConversion::Convert(float(cameraData.y), EUnit::Meters, EUnit::Meters);
+#else
         pos.X = FUnitConversion::Convert(float(cameraData.z), EUnit::Meters, EUnit::Centimeters);
         pos.Y = FUnitConversion::Convert(float(cameraData.x), EUnit::Meters, EUnit::Centimeters);
         pos.Z = FUnitConversion::Convert(float(cameraData.y), EUnit::Meters, EUnit::Centimeters);
+#endif
         SceneComponent->SetRelativeLocation(pos);
     }
 
@@ -701,7 +755,15 @@ void FRenderStreamModule::OnPostEngineInit()
 
     StreamPool = MakeUnique<FStreamPool>();
 
+#if RS2_UE53_CUSTOM
+    // === RS2_UE53_CUSTOM: 
+    // For using Maps selector
+    URenderStreamSettings* mutableSettings = GetMutableDefault<URenderStreamSettings>();
+    mutableSettings->SceneSelector = ERenderStreamSceneSelector::Maps;
+    const URenderStreamSettings* settings = mutableSettings;
+#else
     const URenderStreamSettings* settings = GetDefault<URenderStreamSettings>();
+#endif
     switch (settings->SceneSelector)
     {
     case ERenderStreamSceneSelector::None:

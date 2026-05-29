@@ -104,7 +104,18 @@ const RenderStreamLink::Schema& RenderStreamSceneSelector::Schema() const
 
 void RenderStreamSceneSelector::LoadSchemas(const UWorld& World)
 {
+#if RS2_UE53_CUSTOM
+    // === RS2_UE53_CUSTOM:
+    // Use _MX.json suffix to match schema file
+    FString ProjectPath = FPaths::GetProjectFilePath();
+    FString ProjectDir = FPaths::GetPath(ProjectPath);
+    FString ProjectName = FPaths::GetBaseFilename(ProjectPath);
+    FString ProjectPathWithoutExt = FPaths::Combine(ProjectDir, ProjectName);
+    ProjectPathWithoutExt += TEXT("_MX.json");
+    const std::string AssetPath = TCHAR_TO_UTF8(*ProjectPathWithoutExt);
+#else
     const std::string AssetPath = TCHAR_TO_UTF8(*FPaths::GetProjectFilePath());
+#endif
     uint32_t nBytes = 0;
     RenderStreamLink::instance().rs_loadSchema(AssetPath.c_str(), nullptr, &nBytes);
 
