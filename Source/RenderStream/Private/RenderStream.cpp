@@ -164,6 +164,11 @@ static const FName DisplayClusterModuleName(TEXT("DisplayCluster"));
 
 void FRenderStreamModule::StartupModule()
 {
+#if RS2_UE53_CUSTOM
+    UE_LOG(LogRenderStream, Display, TEXT("========================================"));
+    UE_LOG(LogRenderStream, Display, TEXT("===  RS2.0-UE5.3 customized version  ==="));
+    UE_LOG(LogRenderStream, Display, TEXT("========================================"));
+#endif
     if (FApp::CanEverRender() && FString("VulkanRHI") == FString(GetSelectedDynamicRHIModuleName(false)))
     {
         const TArray<const ANSICHAR*> ExtentionsToAdd{ 
