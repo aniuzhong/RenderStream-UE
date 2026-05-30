@@ -723,15 +723,7 @@ void FRenderStreamModule::OnPostEngineInit()
 
     StreamPool = MakeUnique<FStreamPool>();
 
-#if RS2_UE53_CUSTOM
-    // === RS2_UE53_CUSTOM: 
-    // For using Maps selector
-    URenderStreamSettings* mutableSettings = GetMutableDefault<URenderStreamSettings>();
-    mutableSettings->SceneSelector = ERenderStreamSceneSelector::Maps;
-    const URenderStreamSettings* settings = mutableSettings;
-#else
     const URenderStreamSettings* settings = GetDefault<URenderStreamSettings>();
-#endif
     switch (settings->SceneSelector)
     {
     case ERenderStreamSceneSelector::None:
