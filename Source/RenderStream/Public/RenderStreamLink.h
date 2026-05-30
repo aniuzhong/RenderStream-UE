@@ -123,46 +123,6 @@ public:
         uint8_t virtualReprojectionRequired;
     } D3TrackingData;  // Tracking data required by d3 but not used to render content
 
-#if RS2_UE53_CUSTOM
-#pragma pack(push, 4)
-    typedef struct
-    {
-        double px;
-        double py;
-        double pz;
-        double rx;
-        double ry;
-        double rz;
-        double fovH;
-        double fovV;
-        int resolutionW;
-        int resolutionH;
-        int64_t sendEngineTime;
-        int64_t sendTrackProgress;
-        int layerId;
-        char layerName[64];
-        char cameraName[256];
-        int sceneIndex;
-        int cameraFlag;
-        double qw;
-        double qx;
-        double qy;
-        double qz;
-        double ori_qw;
-        double ori_qx;
-        double ori_qy;
-        double ori_qz;
-        int denominator;
-        double pxOffset;
-        double pyOffset;
-        double pzOffset;
-        double rxOffset;
-        double ryOffset;
-        double rzOffset;
-    } NvUECameraData;
-#pragma pack(pop)
-#endif
-
     typedef struct
     {
         StreamHandle id;
@@ -177,9 +137,6 @@ public:
         float aperture; // Apply if > 0
         float focusDistance;  // Apply if > 0
         D3TrackingData d3Tracking;
-#if RS2_UE53_CUSTOM
-        NvUECameraData mxCameraData;
-#endif
     } CameraData;
 
     typedef struct
@@ -511,13 +468,8 @@ private:
     typedef RS_ERROR rs_getSkeletonJointNamesFn(uint64_t schemaHash, uint64_t layoutId, /*Out*/ const char** names, /*Out*/int** nameByteLengths, /*Out*/int* numJoints);
     typedef RS_ERROR rs_getSkeletonJointPosesFn(uint64_t schemaHash, uint32_t poseParamIndex, /*Out*/SkeletonPose* pose, /*Out*/int* numJoints);
 
-#if RS2_UE53_CUSTOM
-    typedef RS_ERROR rs_getFrameCameraFn(StreamHandle streamHandle, /*Out*/CameraData* outCameraData, /*Out*/NvUECameraData* ueCameraData);  // returns the CameraData for this stream, or RS_ERROR_NOTFOUND if no camera data is available for this stream on this frame
-    typedef RS_ERROR rs_sendFrameFn(StreamHandle streamHandle, const void* data, const void* frameData, const void* ueCameraData); // publish a frame buffer which was generated from the associated tracking and timing information.
-#else
     typedef RS_ERROR rs_getFrameCameraFn(StreamHandle streamHandle, /*Out*/CameraData* outCameraData);  // returns the CameraData for this stream, or RS_ERROR_NOTFOUND if no camera data is available for this stream on this frame
     typedef RS_ERROR rs_sendFrameFn(StreamHandle streamHandle, const SenderFrame* data, const void* frameData); // publish a frame buffer which was generated from the associated tracking and timing information.
-#endif
 
     typedef RS_ERROR rs_releaseImageFn(const SenderFrame* image); // release any references to image (e.g. before deletion)
 

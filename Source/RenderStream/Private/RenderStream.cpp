@@ -609,17 +609,8 @@ void FRenderStreamModule::ApplyCameras(const RenderStreamLink::FrameData& frameD
             continue;
 
         RenderStreamLink::CameraData cameraData;
-#if RS2_UE53_CUSTOM
-        RenderStreamLink::NvUECameraData nvUeData = {};
-        if (RenderStreamLink::instance().rs_getFrameCamera(stream->Handle(), &cameraData, &nvUeData) == RenderStreamLink::RS_ERROR_SUCCESS)
-        {
-            cameraData.mxCameraData = nvUeData;
-            ApplyCameraData(*pair.Value, frameData, cameraData);
-        }
-#else
         if (RenderStreamLink::instance().rs_getFrameCamera(stream->Handle(), &cameraData) == RenderStreamLink::RS_ERROR_SUCCESS)
             ApplyCameraData(*pair.Value, frameData, cameraData);
-#endif
     }
 }
 
