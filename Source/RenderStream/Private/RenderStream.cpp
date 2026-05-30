@@ -690,14 +690,9 @@ void FRenderStreamModule::ApplyCameraData(FRenderStreamViewportInfo& info, const
     }
     else if (CameraComponent)
     {
-#if RS2_UE53_CUSTOM
-        // === RS2_UE53_CUSTOM: Use FOV from UDP directly
-        CameraComponent->SetFieldOfView(cameraData.mxCameraData.fovH);
-#else
         float throwRatioH = cameraData.focalLength / cameraData.sensorX;
         float fovH = 2.f * FMath::Atan(0.5f / throwRatioH);
         CameraComponent->SetFieldOfView(fovH * 180.f / PI);
-#endif
         CameraComponent->SetAspectRatio(cameraData.sensorX / cameraData.sensorY);
     }
 
