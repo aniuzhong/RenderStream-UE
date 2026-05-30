@@ -211,13 +211,6 @@ void FRenderStreamModule::StartupModule()
             RenderStreamLink::instance().unloadExplicit();
             return;
         }
-        
-#if RS2_UE53_CUSTOM
-        if (RenderStreamLink::instance().rs_start_camera_udp)
-        {
-            RenderStreamLink::instance().rs_start_camera_udp(37021);
-        }
-#endif
 
         FCoreDelegates::OnHandleSystemError.AddRaw(this, &FRenderStreamModule::OnSystemError);
 

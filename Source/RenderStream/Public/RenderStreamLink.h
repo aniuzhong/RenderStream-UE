@@ -451,9 +451,6 @@ private:
     typedef RS_ERROR rs_logToD3Fn(const char * str);
     typedef RS_ERROR rs_sendProfilingDataFn(ProfilingEntry* entries, int count);
     typedef RS_ERROR rs_setNewStatusMessageFn(const char* msg);
-#if RS2_UE53_CUSTOM
-    typedef RS_ERROR rs_start_camera_udpFn(uint16_t port);
-#endif
 
 public:
     RENDERSTREAM_API bool isAvailable();
@@ -581,9 +578,6 @@ public: // d3renderstream.h API, but loaded dynamically.
     rs_logToD3Fn* rs_logToD3 = nullptr;
     rs_sendProfilingDataFn* rs_sendProfilingData = nullptr;
     rs_setNewStatusMessageFn* rs_setNewStatusMessage = nullptr;
-#if RS2_UE53_CUSTOM
-    rs_start_camera_udpFn* rs_start_camera_udp = nullptr;
-#endif
 
 private:
     bool m_loaded = false;
