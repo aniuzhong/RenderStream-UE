@@ -222,19 +222,18 @@ public:
         float bottom;
     } ProjectionClipping;
 
-#pragma pack(pop)
     typedef struct
     {
         StreamHandle handle;
-        char channel[256];
+        const char* channel;
         uint64_t mappingId;
         int32_t iViewpoint;
-        char name[64];
+        const char* name;
         uint32_t width;
         uint32_t height;
         RSPixelFormat format;
         ProjectionClipping clipping;
-        char* mappingName;
+        const char* mappingName;
         int32_t iFragment;
     } StreamDescription;
 
@@ -243,7 +242,6 @@ public:
         uint32_t nStreams;
         StreamDescription* streams;
     } StreamDescriptions;
-#pragma pack(push, 4)
 
     enum RemoteParameterType
     {
