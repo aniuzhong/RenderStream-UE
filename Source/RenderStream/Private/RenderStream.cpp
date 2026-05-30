@@ -473,30 +473,6 @@ bool FRenderStreamModule::PopulateStreamPool()
 
     if (RenderStreamLink::instance().isAvailable())
     {
-#if RS2_UE53_CUSTOM
-        RenderStreamLink::StreamDescription tmp;
-        uint32_t nBytes = 0;
-        RenderStreamLink::RS_ERROR res = RenderStreamLink::instance().rs_getStreams(tmp, &nBytes, 0);
-
-        if (res != RenderStreamLink::RS_ERROR_SUCCESS)
-            return false;
-
-        RenderStreamLink::StreamDescriptions strDesc;
-        strDesc.nStreams = nBytes;
-        strDesc.streams.resize(nBytes);
-        for (uint32_t i = 0; i < nBytes; i++)
-        {
-            res = RenderStreamLink::instance().rs_getStreams(strDesc.streams[i], &nBytes, i);
-        }
-
-        if (res != RenderStreamLink::RS_ERROR_SUCCESS)
-            return false;
-
-        TArray<FStreamInfo> streamInfoArray;
-        for (uint32_t i = 0; i < strDesc.nStreams; ++i)
-        {
-            const RenderStreamLink::StreamDescription& description = strDesc.streams[i];
-#else
         std::vector<uint8_t> descMem;
         uint32_t nBytes = 0;
         RenderStreamLink::instance().rs_getStreams(nullptr, &nBytes);
@@ -515,18 +491,17 @@ bool FRenderStreamModule::PopulateStreamPool()
 
             ++iterations;
         } while (res == RenderStreamLink::RS_ERROR_BUFFER_OVERFLOW && iterations < MAX_TRIES);
-        
+
         if (res != RenderStreamLink::RS_ERROR_SUCCESS)
             return false;
 
         const RenderStreamLink::StreamDescriptions* header = nBytes >= sizeof(RenderStreamLink::StreamDescriptions) ? reinterpret_cast<const RenderStreamLink::StreamDescriptions*>(descMem.data()) : nullptr;
         const size_t numStreams = header ? header->nStreams : 0;
         TArray<FStreamInfo> streamInfoArray;
-        
+
         for (size_t i = 0; i < numStreams; ++i)
         {
             const RenderStreamLink::StreamDescription& description = header->streams[i];
-#endif
             const FString Name(description.name);
             const FIntPoint Resolution(description.width, description.height);
             const FString Channel(description.channel);

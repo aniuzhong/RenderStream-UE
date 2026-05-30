@@ -222,7 +222,7 @@ public:
         float bottom;
     } ProjectionClipping;
 
-#if RS2_UE53_CUSTOM
+#pragma pack(pop)
     typedef struct
     {
         StreamHandle handle;
@@ -241,30 +241,9 @@ public:
     typedef struct
     {
         uint32_t nStreams;
-        std::vector<StreamDescription> streams;
-    } StreamDescriptions;
-#else
-    typedef struct
-    {
-        StreamHandle handle;
-        const char* channel;
-        uint64_t mappingId;
-        int32_t iViewpoint;
-        const char* name;
-        uint32_t width;
-        uint32_t height;
-        RSPixelFormat format;
-        ProjectionClipping clipping;
-        const char* mappingName;
-        int32_t iFragment;
-    } StreamDescription;
-
-    typedef struct
-    {
-        uint32_t nStreams;
         StreamDescription* streams;
     } StreamDescriptions;
-#endif
+#pragma pack(push, 4)
 
     enum RemoteParameterType
     {
@@ -449,11 +428,7 @@ private:
     typedef RS_ERROR rs_loadSchemaFn(const char* assetPath, /*Out*/Schema* schema, /*InOut*/uint32_t* nBytes); // Load schema for project file/custom executable at (assetPath) into a buffer of size (nBytes) starting at (schema)
     // workload functions, these require the process to be running inside d3's asset launcher environment
     typedef RS_ERROR rs_setSchemaFn(/*InOut*/Schema* schema); // Set schema and fill in per-scene hash for use with rs_getFrameParameters
-#if RS2_UE53_CUSTOM
-    typedef RS_ERROR rs_getStreamsFn(/*Out*/StreamDescription& streams, /*InOut*/uint32_t* nBytes, uint32_t index); // Populate a single stream description by index
-#else
     typedef RS_ERROR rs_getStreamsFn(/*Out*/StreamDescriptions* streams, /*InOut*/uint32_t* nBytes); // Populate streams into a buffer of size (nBytes) starting at (streams)
-#endif
 
     typedef RS_ERROR rs_awaitFrameDataFn(int timeoutMs, /*Out*/FrameData* data); // waits for any asset, any stream to request a frame, provides the parameters for that frame.
     typedef RS_ERROR rs_setFollowerFn(int isFollower); // Used to mark this node as relying on alternative mechanisms to distribute FrameData. Users must provide correct CameraResponseData to sendFrame, and call rs_beginFollowerFrame at the start of the frame, where awaitFrame would normally be called.
