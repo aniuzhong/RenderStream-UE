@@ -635,6 +635,28 @@ void FRenderStreamModule::ApplyCameraData(FRenderStreamViewportInfo& info, const
     if (!info.Camera.IsValid())
         return;
 
+#if RS2_UE53_CUSTOM
+    // Self-host mode: preserve the level camera's transform until external camera data arrives.
+    // The DLL defaults (px=-2020,py=-30,pz=100,rx=ry=rz=0) map to cameraData x=-30,y=100,z=-2020,rx=ry=rz=0.
+    if (info.bUseLevelCamera)
+    {
+        const bool bHasExternalCamera =
+            !FMath::IsNearlyEqual(cameraData.x, -30.0f) ||
+            !FMath::IsNearlyEqual(cameraData.y, 100.0f) ||
+            !FMath::IsNearlyEqual(cameraData.z, -2020.0f) ||
+            !FMath::IsNearlyEqual(cameraData.rx, 0.0f) ||
+            !FMath::IsNearlyEqual(cameraData.ry, 0.0f) ||
+            !FMath::IsNearlyEqual(cameraData.rz, 0.0f);
+
+        if (!bHasExternalCamera)
+            return;
+
+        info.bUseLevelCamera = false;
+        UE_LOG(LogRenderStream, Log, TEXT("External camera control detected (px=%.1f py=%.1f pz=%.1f), switching from level camera to remote mode."),
+            cameraData.z, cameraData.x, cameraData.y);
+    }
+#endif
+
     // Attach the instanced Camera to the Capture object for this view.
     USceneComponent* SceneComponent = info.Camera->K2_GetRootComponent();
     UCameraComponent* CameraComponent = info.Camera->GetCameraComponent();

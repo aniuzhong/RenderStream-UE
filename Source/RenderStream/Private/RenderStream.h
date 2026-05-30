@@ -40,7 +40,10 @@ struct FRenderStreamViewportInfo
     TWeakObjectPtr<ACameraActor> Camera = nullptr;
     int32_t PlayerId = -1;
     RenderStreamLink::CameraHandle CameraHandleLast = 0;
-    
+#if RS2_UE53_CUSTOM
+    bool bUseLevelCamera = true;  // Self-host: preserve level camera transform, skip DLL override
+#endif
+
     std::mutex m_frameResponsesLock;
     std::map<uint64, RenderStreamLink::CameraResponseData> m_frameResponsesMap;
 };
