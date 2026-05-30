@@ -206,14 +206,8 @@ bool RenderStreamLink::loadExplicit()
     LOAD_FN(rs_initialise);
     LOAD_FN(rs_initialiseGpGpuWithDX11Device);
     LOAD_FN(rs_initialiseGpGpuWithDX12DeviceAndQueue);
-#if RS2_UE53_CUSTOM
-    // OpenGL/Vulkan GPGPU init not supported in customized version DLL currently
-    // LOAD_FN(rs_initialiseGpGpuWithOpenGlContexts);
-    // LOAD_FN(rs_initialiseGpGpuWithVulkanDevice);
-#else
     LOAD_FN(rs_initialiseGpGpuWithOpenGlContexts);
     LOAD_FN(rs_initialiseGpGpuWithVulkanDevice);
-#endif
     LOAD_FN(rs_shutdown);
 
     LOAD_FN(rs_registerLoggingFunc);
