@@ -637,13 +637,13 @@ void FRenderStreamModule::ApplyCameraData(FRenderStreamViewportInfo& info, const
 
 #if RS2_UE53_CUSTOM
     // Self-host mode: preserve the level camera's transform until external camera data arrives.
-    // The DLL defaults (px=-2020,py=-30,pz=100,rx=ry=rz=0) map to cameraData x=-30,y=100,z=-2020,rx=ry=rz=0.
+    // DLL defaults (px=-2020,py=-30,pz=100,rx=ry=rz=0) in UE units → CameraData meters: x=-0.3,y=1.0,z=-20.2.
     if (info.bUseLevelCamera)
     {
         const bool bHasExternalCamera =
-            !FMath::IsNearlyEqual(cameraData.x, -30.0f) ||
-            !FMath::IsNearlyEqual(cameraData.y, 100.0f) ||
-            !FMath::IsNearlyEqual(cameraData.z, -2020.0f) ||
+            !FMath::IsNearlyEqual(cameraData.x, -0.3f) ||
+            !FMath::IsNearlyEqual(cameraData.y, 1.0f) ||
+            !FMath::IsNearlyEqual(cameraData.z, -20.2f) ||
             !FMath::IsNearlyEqual(cameraData.rx, 0.0f) ||
             !FMath::IsNearlyEqual(cameraData.ry, 0.0f) ||
             !FMath::IsNearlyEqual(cameraData.rz, 0.0f);
@@ -711,17 +711,9 @@ void FRenderStreamModule::ApplyCameraData(FRenderStreamViewportInfo& info, const
 
         // NB SceneComponent pos appears to be in Centimeters, whatever distance units are set in the project settings
         FVector pos;
-#if RS2_UE53_CUSTOM
-        // === RS2_UE53_CUSTOM:
-        // UDP data is already in UE units (cm), no conversion needed
-        pos.X = FUnitConversion::Convert(float(cameraData.z), EUnit::Meters, EUnit::Meters);
-        pos.Y = FUnitConversion::Convert(float(cameraData.x), EUnit::Meters, EUnit::Meters);
-        pos.Z = FUnitConversion::Convert(float(cameraData.y), EUnit::Meters, EUnit::Meters);
-#else
         pos.X = FUnitConversion::Convert(float(cameraData.z), EUnit::Meters, EUnit::Centimeters);
         pos.Y = FUnitConversion::Convert(float(cameraData.x), EUnit::Meters, EUnit::Centimeters);
         pos.Z = FUnitConversion::Convert(float(cameraData.y), EUnit::Meters, EUnit::Centimeters);
-#endif
         SceneComponent->SetRelativeLocation(pos);
     }
 
