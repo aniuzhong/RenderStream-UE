@@ -319,6 +319,7 @@ void FRenderStreamModule::LoadSchemas(const UWorld& World)
 
 void FRenderStreamModule::ApplyScene(uint32_t sceneId)
 {
+    TRACE_CPUPROFILER_EVENT_SCOPE(TEXT("FRenderStreamModule::ApplyScene()"));
     check(m_sceneSelector != nullptr);
     m_sceneSelector->ApplyScene(*GWorld, sceneId);
 }
@@ -370,6 +371,8 @@ bool UpdateViewport(FFrameStreamPtr Stream)
 
 void FRenderStreamModule::ConfigureStream(FFrameStreamPtr Stream)
 {
+    TRACE_CPUPROFILER_EVENT_SCOPE(TEXT("FRenderStreamModule::ConfigureStream()"));
+
     FString const& Name = Stream->Name();
     if (!Stream)
     {
@@ -487,6 +490,8 @@ void FRenderStreamModule::ConfigureStream(FFrameStreamPtr Stream)
 
 bool FRenderStreamModule::PopulateStreamPool()
 {
+    TRACE_CPUPROFILER_EVENT_SCOPE(TEXT("FRenderStreamModule::PopulateStreamPool()"));
+
     if (!StreamPool) {
         UE_LOG(LogRenderStream, Log, TEXT("Abort populating stream pool, not initialized."));
         return false;
@@ -624,6 +629,7 @@ void FRenderStreamModule::ApplyCameras(const RenderStreamLink::FrameData& frameD
 {
     ++g_ApplyCamerasCallCount;
     const int32 CallN = g_ApplyCamerasCallCount;
+    TRACE_CPUPROFILER_EVENT_SCOPE(TEXT("FRenderStreamModule::ApplyCameras()"));
 
     for (auto& pair  : ViewportInfos)
     {
@@ -661,6 +667,7 @@ void FRenderStreamModule::ApplyCameraData(FRenderStreamViewportInfo& info, const
 {
     ++g_ApplyCameraDataCallCount;
     const int32 CallN = g_ApplyCameraDataCallCount;
+    TRACE_CPUPROFILER_EVENT_SCOPE(TEXT("FRenderStreamModule::ApplyCameraData()"));
 
     // Each call must always have a frame response, because there will be a corresponding render call.
     {
