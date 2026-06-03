@@ -85,7 +85,6 @@ bool RenderStreamLink::loadExplicit()
         const FString BaseDir = RSPlugin->GetBaseDir();
         static const TCHAR* RelativeCandidates[] = {
             TEXT("Binaries/Win64/renderstream.dll"),
-            TEXT("Binaries/ThirdParty/Win64/renderstream.dll"),
         };
         for (const TCHAR* Rel : RelativeCandidates)
         {
@@ -95,7 +94,7 @@ bool RenderStreamLink::loadExplicit()
         }
         if (candidateDllPaths.Num() == 0)
         {
-            UE_LOG(LogRenderStream, Error, TEXT("renderstream.dll not found under RenderStream-UE (%s). Place it (and its dependent DLLs) in Binaries/Win64 or Binaries/ThirdParty/Win64."), *BaseDir);
+            UE_LOG(LogRenderStream, Error, TEXT("renderstream.dll not found under RenderStream-UE (%s). Place it (and its dependent DLLs) in Binaries/Win64."), *BaseDir);
         }
     }
     else
