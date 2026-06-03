@@ -439,6 +439,7 @@ void GenerateScene(
 {
     FString sceneName = Cache->GetName();
     SceneParameters.name = _strdup(TCHAR_TO_UTF8(*sceneName));
+    SceneParameters.hash = 0;
 
     const URenderStreamSettings* settings = GetDefault<URenderStreamSettings>();
     bool isStreamingLevelSceneSelector = settings->SceneSelector == ERenderStreamSceneSelector::StreamingLevels;

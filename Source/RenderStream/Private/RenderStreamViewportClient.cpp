@@ -154,6 +154,7 @@ ULocalPlayer* URenderStreamViewportClient::SetupInitialLocalPlayer(FString& OutE
     const size_t nHorizontal = 4;
     const size_t nVertical = 4;
     MaxSplitscreenPlayers = nHorizontal * nVertical;
+    UE_LOG(LogRenderStream, Warning, TEXT("[RS_TRACE] SetupInitialLocalPlayer: MaxSplitscreenPlayers=%d (nH=%d nV=%d)"), MaxSplitscreenPlayers, nHorizontal, nVertical);
 
     FSplitscreenData ScreenLayout;
 
@@ -376,6 +377,7 @@ private:
 void URenderStreamViewportClient::Draw(FViewport* InViewport, FCanvas* SceneCanvas)
 {
 	/// !!!! disguise customizations
+	{ static uint32 s_DrawEntryCount = 0; if (++s_DrawEntryCount <= 5) UE_LOG(LogRenderStream, Warning, TEXT("[RS_TRACE] Draw: ENTRY #%u frame=%u"), s_DrawEntryCount, GFrameCounter); }
 	static const auto DisplayClusterForceCopyCrossGPU = IConsoleManager::Get().FindConsoleVariable(TEXT("DC.ForceCopyCrossGPU"));
 	static const auto DisplayClusterLumenPerView = IConsoleManager::Get().FindConsoleVariable(TEXT("DC.LumenPerView"));
 	static const auto DisplayClusterSortViews = IConsoleManager::Get().FindConsoleVariable(TEXT("DC.SortViews"));
