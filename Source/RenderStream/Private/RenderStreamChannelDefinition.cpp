@@ -3,6 +3,7 @@
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
 #include "Engine/GameEngine.h"
+#include "Engine/Level.h"
 #include "Kismet/GameplayStatics.h"
 
 DEFINE_LOG_CATEGORY(LogRenderStreamChannelDefinition);
@@ -93,6 +94,34 @@ uint32 URenderStreamChannelDefinition::GetChannelCameraNum(const FString& Channe
     return (*Actors)->Num();
 }
 
+inline static TWeakObjectPtr<ACameraActor> GetBetterCamera(const TWeakObjectPtr<ACameraActor>& CamA, const TWeakObjectPtr<ACameraActor>& CamB)
+{
+    // prefer valid camera 
+    if (!CamB.IsValid())
+        return CamA;
+
+    if (!CamA.IsValid())
+        return CamB;
+
+    const bool CamAIsPersistent = CamA->GetLevel() && CamA->GetLevel()->IsPersistentLevel();
+    const bool CamBIsPersistent = CamB->GetLevel() && CamB->GetLevel()->IsPersistentLevel();
+
+    if (CamAIsPersistent != CamBIsPersistent)
+    {
+        // one is persistent, the other not: prefer the camera from the persistent level
+        if (CamAIsPersistent)
+            return CamA;
+        else
+            return CamB;
+    }
+
+    // final tiebreaker: prefer smaller path
+    if (CamA->GetPathName() < CamB->GetPathName())
+        return CamA;
+    else
+        return CamB;
+}
+
 TWeakObjectPtr<ACameraActor> URenderStreamChannelDefinition::GetChannelCamera(const FString& Channel)
 {
     if (Channel.IsEmpty())
@@ -108,18 +137,15 @@ TWeakObjectPtr<ACameraActor> URenderStreamChannelDefinition::GetChannelCamera(co
         return FindCameraInScene();
     }
 
-    // Select camera deterministically by lexicographically smallest path name.
-    // BeginPlay() order is non-deterministic across nDisplay cluster machines,
-    // so we cannot rely on array insertion order (i.e. Last() or First()).
-    // GetPathName() is stable across machines since actor names and level paths
-    // are serialized in the packaged project.
+    // Select camera deterministically. BeginPlay() order is non-deterministic across
+    // nDisplay cluster machines, so we cannot rely on array insertion order.
     const auto& Cameras = *(*ActorsPtrPtr);
-    TWeakObjectPtr<ACameraActor> Best = Cameras[0];
-    for (int32 i = 1; i < Cameras.Num(); i++)
+    TWeakObjectPtr<ACameraActor> Best;
+    for (const auto& Camera : Cameras)
     {
-        if (Cameras[i].IsValid() && (!Best.IsValid() || Cameras[i]->GetPathName() < Best->GetPathName()))
-            Best = Cameras[i];
+        Best = GetBetterCamera(Best, Camera);
     }
+
     return Best;
 }
 
@@ -253,11 +279,9 @@ void URenderStreamChannelDefinition::BeginPlay()
         if (Array.Num() > 0)
         {
             UE_LOG(LogRenderStreamChannelDefinition, Warning,
-                TEXT("Multiple cameras on channel '%s': '%s' already registered, now adding '%s'. "
+                TEXT("!!!!! Multiple cameras registered for the same channel '%s'. "
                      "This may cause non-deterministic camera selection across cluster nodes."),
-                *ChannelName,
-                Array.Last().IsValid() ? *Array.Last()->GetName() : TEXT("INVALID"),
-                *ActorName);
+                *ChannelName);
         }
         Array.Add(Owner);
         Registered = true;

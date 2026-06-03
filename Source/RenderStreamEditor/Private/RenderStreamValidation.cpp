@@ -391,24 +391,35 @@ bool FRenderStreamValidation::ValidateChannelInfo(const FRenderStreamChannelInfo
     return IssuesFound;
 }
 
-void FRenderStreamValidation::RunValidation(const TArray<URenderStreamChannelCacheAsset*>& Caches)
+bool FRenderStreamValidation::ValidateDuplicateChannels(const TArray<URenderStreamChannelCacheAsset*>& Caches)
 {
     bool IssuesFound = false;
+
+    // Same-level duplicates: multiple cameras in one level sharing a channel name
+    for (const URenderStreamChannelCacheAsset* Cache : Caches)
     {
-        FMessageLog RSV("RenderStreamValidation");
-        RSV.SuppressLoggingToOutputLog(true);
-        RSV.Info()->AddToken(FTextToken::Create(FText::FromString("Project settings:")));
-        if (Caches.Num() == 0)
+        if (!Cache)
+            continue;
+
+        const FString LevelName = Cache->GetName();
+
+        for (const auto& Pair : Cache->ChannelToActors)
         {
-            IssuesFound = true;
-            RSV.Warning()->AddToken(FTextToken::Create(FText::FromString(FString(TEXT("Camera with a renderstream channel definition component not detected.")))));
+            if (Pair.Value.Num() > 1)
+            {
+                IssuesFound = true;
+                FMessageLog RSV("RenderStreamValidation");
+                RSV.SuppressLoggingToOutputLog(true);
+                FString ActorList = FString::Join(Pair.Value, TEXT("', '"));
+                RSV.Error()->AddToken(FTextToken::Create(FText::FromString(FString::Printf(
+                    TEXT("Duplicate channel '%s' in level '%s': cameras '%s' share the same channel name. "
+                         "Make sure camera names are unique."),
+                    *Pair.Key, *LevelName, *ActorList))));
+            }
         }
     }
-    IssuesFound |= ValidateProjectSettings();
 
-    // Detect duplicate channel names across different levels (e.g., a camera in the
-    // persistent level sharing a channel name with a camera in a streaming sub-level).
-    // Within-level duplicates are caught separately in UpdateLevelChannelCache().
+    // Cross-level duplicates: same channel name appearing in different levels
     TMap<FString, FString> ChannelToLevel;
     for (const URenderStreamChannelCacheAsset* Cache : Caches)
     {
@@ -426,7 +437,7 @@ void FRenderStreamValidation::RunValidation(const TArray<URenderStreamChannelCac
                 RSV.SuppressLoggingToOutputLog(true);
                 RSV.Error()->AddToken(FTextToken::Create(FText::FromString(FString::Printf(
                     TEXT("Channel '%s' exists in multiple levels: '%s' and '%s'. "
-                         "This may cause non-deterministic camera selection across cluster nodes."),
+                         "Make sure camera names are unique."),
                     *ChannelName, **ExistingLevel, *LevelName))));
             }
             else
@@ -435,6 +446,25 @@ void FRenderStreamValidation::RunValidation(const TArray<URenderStreamChannelCac
             }
         }
     }
+
+    return IssuesFound;
+}
+
+void FRenderStreamValidation::RunValidation(const TArray<URenderStreamChannelCacheAsset*>& Caches)
+{
+    bool IssuesFound = false;
+    {
+        FMessageLog RSV("RenderStreamValidation");
+        RSV.SuppressLoggingToOutputLog(true);
+        RSV.Info()->AddToken(FTextToken::Create(FText::FromString("Project settings:")));
+        if (Caches.Num() == 0)
+        {
+            IssuesFound = true;
+            RSV.Warning()->AddToken(FTextToken::Create(FText::FromString(FString(TEXT("Camera with a renderstream channel definition component not detected.")))));
+        }
+    }
+    IssuesFound |= ValidateProjectSettings();
+    IssuesFound |= ValidateDuplicateChannels(Caches);
 
     for (const URenderStreamChannelCacheAsset* Cache : Caches)
     {
