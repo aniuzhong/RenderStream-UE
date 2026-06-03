@@ -97,6 +97,17 @@ namespace RSUCHelpers
     {
         SCOPED_DRAW_EVENTF(RHICmdList, MediaCapture, TEXT("RS Send Frame"));
         // convert the source with a draw call
+        {
+            static int32 s_FmtLogCount = 0;
+            if (++s_FmtLogCount <= 5) {
+                const auto srcFmt = InSourceTexture->GetFormat();
+                const auto dstFmt = BufTexture->GetFormat();
+                const auto srcSize = InSourceTexture->GetSizeXY();
+                const auto dstSize = BufTexture->GetTexture2D()->GetSizeXY();
+                UE_LOG(LogRenderStream, Warning, TEXT("[RS_TRACE] SendFrame #%d: src=%dx%d fmt=%d dst=%dx%d fmt=%d"),
+                    s_FmtLogCount, srcSize.X, srcSize.Y, (int32)srcFmt, dstSize.X, dstSize.Y, (int32)dstFmt);
+            }
+        }
         FGraphicsPipelineStateInitializer GraphicsPSOInit;
         FRHITexture* RenderTarget = BufTexture.GetReference();
         FRHIRenderPassInfo RPInfo(RenderTarget, ERenderTargetActions::DontLoad_Store);
@@ -161,9 +172,20 @@ namespace RSUCHelpers
             Response.cameraData = &FrameData;
 
             auto output = RenderStreamLink::instance().rs_sendFrame2(Handle, &data, &Response);
-            if (output != RenderStreamLink::RS_ERROR_SUCCESS)
             {
-                UE_LOG(LogRenderStream, Log, TEXT("Failed to send frame: %d"), output);
+                static int32 s_SendCount = 0;
+                ++s_SendCount;
+                if (s_SendCount <= 5 || s_SendCount % 120 == 0)
+                {
+                    if (output == RenderStreamLink::RS_ERROR_SUCCESS)
+                    {
+                        UE_LOG(LogRenderStream, Log, TEXT("[RS_TRACE] rs_sendFrame2 #%d: SUCCESS handle=%llu"), s_SendCount, Handle);
+                    }
+                    else
+                    {
+                        UE_LOG(LogRenderStream, Error, TEXT("[RS_TRACE] rs_sendFrame2 #%d: FAILED handle=%llu err=%d"), s_SendCount, Handle, (int32)output);
+                    }
+                }
             }
         }
         else if (toggle == "D3D12")
@@ -182,9 +204,29 @@ namespace RSUCHelpers
             {
                 SCOPED_DRAW_EVENTF(RHICmdList, MediaCapture, TEXT("rs_sendFrame2"));
                 auto output = RenderStreamLink::instance().rs_sendFrame2(Handle, &data, &Response);
-                if (output != RenderStreamLink::RS_ERROR_SUCCESS)
                 {
-                    UE_LOG(LogRenderStream, Log, TEXT("Failed to send frame: %d"), output);
+                    static int32 s_Dx12SendCount = 0;
+                    ++s_Dx12SendCount;
+                    if (s_Dx12SendCount <= 120)  // Log all frames up to 120, then every 120
+                    {
+                        if (s_Dx12SendCount <= 30 || s_Dx12SendCount % 120 == 0) {
+                            if (output == RenderStreamLink::RS_ERROR_SUCCESS)
+                            {
+                                UE_LOG(LogRenderStream, Log, TEXT("[RS_TRACE] rs_sendFrame2(DX12) #%d: SUCCESS handle=%llu"), s_Dx12SendCount, Handle);
+                            }
+                            else
+                            {
+                                UE_LOG(LogRenderStream, Error, TEXT("[RS_TRACE] rs_sendFrame2(DX12) #%d: FAILED handle=%llu err=%d"), s_Dx12SendCount, Handle, (int32)output);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        if (s_Dx12SendCount % 120 == 0)
+                        {
+                            UE_LOG(LogRenderStream, Log, TEXT("[RS_TRACE] rs_sendFrame2(DX12) #%d: SUCCESS handle=%llu"), s_Dx12SendCount, Handle);
+                        }
+                    }
                 }
             }
         }
@@ -235,9 +277,20 @@ namespace RSUCHelpers
             {
                 SCOPED_DRAW_EVENTF(RHICmdList, MediaCapture, TEXT("rs_sendFrame2"));
                 auto output = RenderStreamLink::instance().rs_sendFrame2(Handle, &data, &Response);
-                if (output != RenderStreamLink::RS_ERROR_SUCCESS)
                 {
-                    UE_LOG(LogRenderStream, Log, TEXT("Failed to send frame: %d"), output);
+                    static int32 s_VkSendCount = 0;
+                    ++s_VkSendCount;
+                    if (s_VkSendCount <= 5 || s_VkSendCount % 120 == 0)
+                    {
+                        if (output == RenderStreamLink::RS_ERROR_SUCCESS)
+                        {
+                            UE_LOG(LogRenderStream, Log, TEXT("[RS_TRACE] rs_sendFrame2(VK) #%d: SUCCESS handle=%llu"), s_VkSendCount, Handle);
+                        }
+                        else
+                        {
+                            UE_LOG(LogRenderStream, Error, TEXT("[RS_TRACE] rs_sendFrame2(VK) #%d: FAILED handle=%llu err=%d"), s_VkSendCount, Handle, (int32)output);
+                        }
+                    }
                 }
             }
         }

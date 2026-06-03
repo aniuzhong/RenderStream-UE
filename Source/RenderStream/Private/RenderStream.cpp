@@ -242,13 +242,17 @@ void FRenderStreamModule::ShutdownModule()
     if (!RenderStreamLink::instance().isAvailable())
         return;
 
-    UE_LOG(LogRenderStream, Log, TEXT("Shutting down RenderStream"));
+    UE_LOG(LogRenderStream, Log, TEXT("Shutting down RenderStream — phase 1: deinit"));
 
     Monitor.Close();
 
     FModuleManager::Get().OnModulesChanged().RemoveAll(this);
 
+    const int32 numLP = GWorld ? GWorld->GetGameInstance()->GetNumLocalPlayers() : -1;
+    UE_LOG(LogRenderStream, Warning, TEXT("[RS_TRACE] ShutdownModule: resetting StreamPool (numStreams=%d) numLocalPlayers=%d"),
+        StreamPool ? StreamPool->StreamCount() : -1, numLP);
     StreamPool.Reset();
+    UE_LOG(LogRenderStream, Warning, TEXT("[RS_TRACE] ShutdownModule: StreamPool reset complete"));
 
     if (IDisplayCluster::IsAvailable())
     {
@@ -285,10 +289,12 @@ void FRenderStreamModule::ShutdownModule()
 
     // This function may be called during shutdown to clean up your module.  For modules that support dynamic reloading,
     // we call this function before unloading the module.
+    UE_LOG(LogRenderStream, Warning, TEXT("[RS_TRACE] ShutdownModule: unloading renderstream.dll..."));
     if (!RenderStreamLink::instance ().unloadExplicit ())
     {
         UE_LOG (LogRenderStream, Warning, TEXT ("Failed to free render stream module."));
     }
+    UE_LOG(LogRenderStream, Warning, TEXT("[RS_TRACE] ShutdownModule: renderstream.dll unload complete"));
 }
 
 bool FRenderStreamModule::SupportsAutomaticShutdown ()
@@ -367,28 +373,31 @@ void FRenderStreamModule::ConfigureStream(FFrameStreamPtr Stream)
     FString const& Name = Stream->Name();
     if (!Stream)
     {
-        UE_LOG(LogRenderStream, Warning, TEXT("Policy '%s' created for unknown stream"), *Name);
+        UE_LOG(LogRenderStream, Warning, TEXT("[RS_TRACE] ConfigureStream: stream '%s' is null"), *Name);
         return;
     }
 
     if (!UpdateViewport(Stream))
     {
-        UE_LOG(LogRenderStream, Error, TEXT("Policy '%s' created without corresponding viewport"), *Name);
+        UE_LOG(LogRenderStream, Error, TEXT("[RS_TRACE] ConfigureStream: Policy '%s' created without corresponding viewport"), *Name);
     }
 
     FRenderStreamViewportInfo& Info = GetViewportInfo(Name);
     const FString Channel = Stream ? Stream->Channel() : "";
+    UE_LOG(LogRenderStream, Warning, TEXT("[RS_TRACE] ConfigureStream: stream='%s' channel='%s' Info.Template=%s"),
+        *Name, *Channel, Info.Template.IsValid() ? *Info.Template->GetName() : TEXT("null"));
+
     const TWeakObjectPtr<ACameraActor> ChannelCamera = URenderStreamChannelDefinition::GetChannelCamera(Channel);
     if (ChannelCamera == nullptr)
     {
-        UE_LOG(LogRenderStream, Warning, TEXT("Failed to find camera for channel '%s' on stream '%s'"), *Channel, *Name);
+        UE_LOG(LogRenderStream, Warning, TEXT("[RS_TRACE] ConfigureStream: FAILED to find camera for channel '%s' on stream '%s'"), *Channel, *Name);
     }
     else if (Info.Template != ChannelCamera)
     {
         Info.Template = ChannelCamera;
         if (Info.Template.IsValid())
         {
-            UE_LOG(LogRenderStream, Log, TEXT("Channel '%s' on viewport '%s' currently mapped to camera '%s'"), *Channel, *Name, *ChannelCamera->GetName());
+            UE_LOG(LogRenderStream, Warning, TEXT("[RS_TRACE] ConfigureStream: Channel '%s' on viewport '%s' mapped to camera '%s'"), *Channel, *Name, *ChannelCamera->GetName());
 
             URenderStreamChannelDefinition* Definition = Info.Template->FindComponentByClass<URenderStreamChannelDefinition>();
             if (Definition)
@@ -441,13 +450,17 @@ void FRenderStreamModule::ConfigureStream(FFrameStreamPtr Stream)
                             break;
                         }
                     }
+                    if (!Controller)
+                    {
+                        UE_LOG(LogRenderStream, Warning, TEXT("[RS_TRACE] ConfigureStream: viewport='%s' CreatePlayer failed for all Ids 0..%d"), *Name, kSafeMax - 1);
+                    }
                 }
 
                 if (Controller)
                     Info.PlayerId = UGameplayStatics::GetPlayerControllerID(Controller);
                 else
                 {
-                    UE_LOG(LogRenderStreamPolicy, Warning, TEXT("Could not set new view target for capturing."));
+                    UE_LOG(LogRenderStreamPolicy, Warning, TEXT("[RS_TRACE] ConfigureStream: NO FREE Controller ID for viewport='%s' — setting Info.Camera=nullptr!"), *Name);
                     Info.PlayerId = -1;
                     Info.Camera = nullptr;
                 }
@@ -463,6 +476,12 @@ void FRenderStreamModule::ConfigureStream(FFrameStreamPtr Stream)
         }
         else
             UE_LOG(LogRenderStream, Log, TEXT("Channel '%s' currently not mapped to a camera"), *Channel);
+    }
+    else
+    {
+        // Template matches but Camera may have been nullified — diagnostic
+        if (!Info.Camera.IsValid())
+            UE_LOG(LogRenderStream, Error, TEXT("[RS_TRACE] ConfigureStream: viewport='%s' Template matches but Camera is INVALID — stuck without retry!"), *Name);
     }
 }
 
@@ -529,7 +548,8 @@ bool FRenderStreamModule::PopulateStreamPool()
             if (!Stream)  // Stream does not already exist in pool
             {
                 // Add new stream to pool
-                UE_LOG(LogRenderStream, Log, TEXT("Discovered new stream %s at %dx%d"), *Name, Resolution.X, Resolution.Y);
+                UE_LOG(LogRenderStream, Warning, TEXT("[RS_TRACE] PopulateStreamPool: NEW stream '%s' chan='%s' %dx%d handle=%llu"),
+                    *Name, *Channel, Resolution.X, Resolution.Y, description.handle);
                 StreamPool->AddNewStreamToPool(Name, Resolution, Channel, description.clipping, description.handle, description.format);
                 Stream = StreamPool->GetStream(Name);
 
@@ -539,9 +559,10 @@ bool FRenderStreamModule::PopulateStreamPool()
                     const FString LocalNodeId = IDisplayCluster::Get().GetConfigMgr()->GetLocalNodeId();
                     const ADisplayClusterRootActor* RootActor = IDisplayCluster::Get().GetGameMgr()->GetRootActor();
                     const UDisplayClusterConfigurationData* ConfigurationData = RootActor->GetConfigData();
-                    
+
                     if (UDisplayClusterConfigurationClusterNode* ClusterNode = ConfigurationData->Cluster->GetNode(LocalNodeId); !ClusterNode->GetViewport(Name))
                     {
+                        UE_LOG(LogRenderStream, Warning, TEXT("[RS_TRACE] PopulateStreamPool: creating dynamic viewport '%s' (not in config)"), *Name);
                         UDisplayClusterConfigurationViewport* Viewport = NewObject<UDisplayClusterConfigurationViewport>(ClusterNode, *Name, RF_Transactional | RF_ArchetypeObject | RF_Public);
                         check(Viewport);
 
@@ -556,11 +577,16 @@ bool FRenderStreamModule::PopulateStreamPool()
 
                         ClusterNode->Viewports.Add(Name, Viewport);
                     }
+                    else
+                    {
+                        UE_LOG(LogRenderStream, Warning, TEXT("[RS_TRACE] PopulateStreamPool: viewport '%s' already exists in config"), *Name);
+                    }
                 }
             }
             else
             {
-                UE_LOG(LogRenderStream, Log, TEXT("Updating stream %s at %dx%d"), *Name, Resolution.X, Resolution.Y);
+                UE_LOG(LogRenderStream, Warning, TEXT("[RS_TRACE] PopulateStreamPool: EXISTING stream '%s' chan='%s' %dx%d"),
+                    *Name, *Channel, Resolution.X, Resolution.Y);
                 Stream->Update(Resolution, Channel, description.clipping, description.handle, description.format);
                 if (IDisplayCluster::IsAvailable())
                 {
@@ -592,22 +618,50 @@ bool FRenderStreamModule::PopulateStreamPool()
     return false;
 }
 
+static int32 g_ApplyCamerasCallCount = 0;
+
 void FRenderStreamModule::ApplyCameras(const RenderStreamLink::FrameData& frameData)
 {
+    ++g_ApplyCamerasCallCount;
+    const int32 CallN = g_ApplyCamerasCallCount;
+
     for (auto& pair  : ViewportInfos)
     {
         const FFrameStreamPtr stream = StreamPool->GetStream(pair.Key);
         if (!stream)
+        {
+            if (CallN <= 3)
+                UE_LOG(LogRenderStream, Warning, TEXT("[RS_TRACE] ApplyCameras #%d: viewport '%s' has NO stream in pool"), CallN, *pair.Key);
             continue;
+        }
 
         RenderStreamLink::CameraData cameraData;
-        if (RenderStreamLink::instance().rs_getFrameCamera(stream->Handle(), &cameraData) == RenderStreamLink::RS_ERROR_SUCCESS)
+        RenderStreamLink::RS_ERROR err = RenderStreamLink::instance().rs_getFrameCamera(stream->Handle(), &cameraData);
+        if (err == RenderStreamLink::RS_ERROR_SUCCESS)
+        {
+            if (CallN <= 3)
+                UE_LOG(LogRenderStream, Warning, TEXT("[RS_TRACE] ApplyCameras #%d: viewport='%s' channel='%s' camHandle=%llu pos=(%.2f,%.2f,%.2f) rot=(%.2f,%.2f,%.2f) fov=%.1f"),
+                    CallN, *pair.Key, *stream->Channel(), cameraData.cameraHandle,
+                    cameraData.x, cameraData.y, cameraData.z,
+                    cameraData.rx, cameraData.ry, cameraData.rz,
+                    cameraData.focalLength > 0 ? (2.f * FMath::Atan(0.5f * cameraData.sensorX / cameraData.focalLength) * 180.f / PI) : -1.f);
             ApplyCameraData(*pair.Value, frameData, cameraData);
+        }
+        else
+        {
+            UE_LOG(LogRenderStream, Warning, TEXT("[RS_TRACE] ApplyCameras #%d: rs_getFrameCamera FAILED for viewport='%s' handle=%llu err=%d"),
+                CallN, *pair.Key, stream->Handle(), (int32)err);
+        }
     }
 }
 
+static int32 g_ApplyCameraDataCallCount = 0;
+
 void FRenderStreamModule::ApplyCameraData(FRenderStreamViewportInfo& info, const RenderStreamLink::FrameData& frameData, const RenderStreamLink::CameraData& cameraData)
 {
+    ++g_ApplyCameraDataCallCount;
+    const int32 CallN = g_ApplyCameraDataCallCount;
+
     // Each call must always have a frame response, because there will be a corresponding render call.
     {
         std::lock_guard<std::mutex> guard(info.m_frameResponsesLock);
@@ -616,7 +670,14 @@ void FRenderStreamModule::ApplyCameraData(FRenderStreamViewportInfo& info, const
     }
 
     if (!info.Camera.IsValid())
+    {
+        if (CallN <= 5)
+            UE_LOG(LogRenderStream, Warning, TEXT("[RS_TRACE] ApplyCameraData #%d: Camera INVALID for PlayerId=%d — skipping position update"), CallN, info.PlayerId);
         return;
+    }
+
+    if (CallN <= 5)
+        UE_LOG(LogRenderStream, Warning, TEXT("[RS_TRACE] ApplyCameraData #%d: Camera='%s' PlayerId=%d camHandle=%llu"), CallN, *info.Camera->GetName(), info.PlayerId, cameraData.cameraHandle);
 
     // Attach the instanced Camera to the Capture object for this view.
     USceneComponent* SceneComponent = info.Camera->K2_GetRootComponent();
