@@ -417,18 +417,27 @@ void FRenderStreamModule::ConfigureStream(FFrameStreamPtr Stream)
             APlayerController* Controller = UGameplayStatics::GetPlayerControllerFromID(GWorld, Info.PlayerId);
             if (!Controller)
             {
+                int MaxSplitscreenPlayers = 0;
                 if (GWorld)
                 {
-                    // We need to find this id ourselves because of a bug introduced in 5.1
                     UGameInstance* GameInstance = GWorld->GetGameInstance();
-                    int MaxSplitscreenPlayers = GameInstance->GetGameViewportClient() != NULL ?
-                        GameInstance->GetGameViewportClient()->MaxSplitscreenPlayers : 1;
-                    for (int32 Id = 0; Id < MaxSplitscreenPlayers; ++Id)
+                    UGameViewportClient* VC = GameInstance->GetGameViewportClient();
+                    MaxSplitscreenPlayers = VC ? VC->MaxSplitscreenPlayers : 1;
+                    UE_LOG(LogRenderStream, Warning, TEXT("[RS_TRACE] ConfigureStream: viewport='%s' PlayerId=%d MaxSplitscreenPlayers=%d numLocalPlayers=%d"),
+                           *Name, Info.PlayerId, MaxSplitscreenPlayers, GameInstance->GetNumLocalPlayers());
+
+                    // Try CreatePlayer directly — it internally rejects taken IDs.
+                    // MaxSplitscreenPlayers has already been bumped in PopulateStreamPool.
+                    const int32 kSafeMax = FMath::Max(MaxSplitscreenPlayers, 16);
+                    for (int32 Id = 0; Id < kSafeMax; ++Id)
                     {
-                        if (GameInstance->FindLocalPlayerFromControllerId(Id) == nullptr)
+                        Controller = UGameplayStatics::CreatePlayer(GWorld, Id);
+                        if (Controller)
                         {
-                            UE_LOG(LogRenderStreamPolicy, Log, TEXT("Created player with id '%d'."), Id);
-                            Controller = UGameplayStatics::CreatePlayer(GWorld, Id);
+                            UE_LOG(LogRenderStreamPolicy, Log, TEXT("Created player with id '%d' for viewport '%s'."), Id, *Name);
+                            ULocalPlayer* LP = Controller->GetLocalPlayer();
+                            UE_LOG(LogRenderStream, Warning, TEXT("[RS_TRACE] ConfigureStream: viewport='%s' new LocalPlayer=%p ControllerId=%d numLocalPlayers(before)=%d numLocalPlayers(after)=%d"),
+                                   *Name, LP, Id, GameInstance->GetNumLocalPlayers() - 1, GameInstance->GetNumLocalPlayers());
                             break;
                         }
                     }
@@ -490,6 +499,20 @@ bool FRenderStreamModule::PopulateStreamPool()
 
         const RenderStreamLink::StreamDescriptions* header = nBytes >= sizeof(RenderStreamLink::StreamDescriptions) ? reinterpret_cast<const RenderStreamLink::StreamDescriptions*>(descMem.data()) : nullptr;
         const size_t numStreams = header ? header->nStreams : 0;
+
+        // Ensure MaxSplitscreenPlayers can accommodate all viewports (+1 for initial local player).
+        // Must be done BEFORE ConfigureStream so CreatePlayer won't hit the player count cap.
+        UGameInstance* GI = GWorld ? GWorld->GetGameInstance() : nullptr;
+        UGameViewportClient* VC = GI ? GI->GetGameViewportClient() : nullptr;
+        const int needed = static_cast<int>(numStreams) + 1;
+        const int floor = FMath::Max(16, needed);
+        if (VC && VC->MaxSplitscreenPlayers < floor)
+        {
+            UE_LOG(LogRenderStream, Warning, TEXT("[RS_TRACE] PopulateStreamPool: bumping MaxSplitscreenPlayers %d -> %d (numStreams=%d)"),
+                VC->MaxSplitscreenPlayers, floor, static_cast<int>(numStreams));
+            VC->MaxSplitscreenPlayers = floor;
+        }
+
         TArray<FStreamInfo> streamInfoArray;
 
         for (size_t i = 0; i < numStreams; ++i)
