@@ -23,6 +23,10 @@
 #include "RenderStreamChannelDefinition.h"
 #include "RenderStreamProjectionPolicy.h"
 
+#include "Engine/LocalPlayer.h"
+#include "GameFramework/PlayerController.h"
+#include "UObject/UObjectIterator.h"
+
 DEFINE_LOG_CATEGORY(LogRenderStreamPolicy);
 
 FString FRenderStreamProjectionPolicy::RenderStreamPolicyType = TEXT("renderstream");
@@ -66,7 +70,55 @@ void FRenderStreamProjectionPolicy::HandleEndScene(class IDisplayClusterViewport
     FRenderStreamModule* Module = FRenderStreamModule::Get();
     check(Module);
 
-    Module->GetViewportInfo(Viewport->GetId()).Camera = nullptr;
+    auto& Info = Module->GetViewportInfo(Viewport->GetId());
+    const int32 numLP = GWorld ? GWorld->GetGameInstance()->GetNumLocalPlayers() : -1;
+    UE_LOG(LogRenderStreamPolicy, Warning, TEXT("[RS_TRACE] HandleEndScene: viewport='%s' Camera=%s PlayerId=%d numLocalPlayers=%d"),
+        *Viewport->GetId(),
+        Info.Camera.IsValid() ? *Info.Camera->GetName() : TEXT("INVALID"),
+        Info.PlayerId,
+        numLP);
+
+    // ── AUDIT: enumerate surviving UObjects once (first viewport only) ──
+    {
+        static bool s_auditDone = false;
+        if (!s_auditDone)
+        {
+            s_auditDone = true;
+
+            int32 countViewport = 0, countPC = 0, countCam = 0, countLP = 0;
+            for (TObjectIterator<UDisplayClusterConfigurationViewport> It; It; ++It)
+            {
+                ++countViewport;
+                UE_LOG(LogRenderStreamPolicy, Warning, TEXT("[AUDIT] LIVE DisplayClusterViewport: %s Outer=%s Flags=0x%x IsPendingKill=%d"),
+                    *It->GetName(), It->GetOuter() ? *It->GetOuter()->GetName() : TEXT("null"),
+                    static_cast<uint32>(It->GetFlags()), It->IsPendingKillOrUnreachable());
+            }
+            for (TObjectIterator<APlayerController> It; It; ++It)
+            {
+                ++countPC;
+                UE_LOG(LogRenderStreamPolicy, Warning, TEXT("[AUDIT] LIVE PlayerController: %s Outer=%s Flags=0x%x IsPendingKill=%d"),
+                    *It->GetName(), It->GetOuter() ? *It->GetOuter()->GetName() : TEXT("null"),
+                    static_cast<uint32>(It->GetFlags()), It->IsPendingKillOrUnreachable());
+            }
+            for (TObjectIterator<ACameraActor> It; It; ++It)
+            {
+                ++countCam;
+                UE_LOG(LogRenderStreamPolicy, Warning, TEXT("[AUDIT] LIVE CameraActor: %s Outer=%s Flags=0x%x IsPendingKill=%d"),
+                    *It->GetName(), It->GetOuter() ? *It->GetOuter()->GetName() : TEXT("null"),
+                    static_cast<uint32>(It->GetFlags()), It->IsPendingKillOrUnreachable());
+            }
+            for (TObjectIterator<ULocalPlayer> It; It; ++It)
+            {
+                ++countLP;
+                UE_LOG(LogRenderStreamPolicy, Warning, TEXT("[AUDIT] LIVE LocalPlayer: %s Outer=%s"),
+                    *It->GetName(), It->GetOuter() ? *It->GetOuter()->GetName() : TEXT("null"));
+            }
+            UE_LOG(LogRenderStreamPolicy, Warning, TEXT("[AUDIT] SUMMARY: Viewports=%d PlayerControllers=%d CameraActors=%d LocalPlayers=%d"),
+                countViewport, countPC, countCam, countLP);
+        }
+    }
+
+    Info.Camera = nullptr;
 }
 
 bool FRenderStreamProjectionPolicy::CalculateView(class IDisplayClusterViewport* InViewport, const uint32 InContextNum, FVector& InOutViewLocation, FRotator& InOutViewRotation, const FVector& ViewOffset, const float WorldToMeters, const float InNCP, const float InFCP)
@@ -78,6 +130,13 @@ bool FRenderStreamProjectionPolicy::CalculateView(class IDisplayClusterViewport*
 
     auto& Info = Module->GetViewportInfo(InViewport->GetId());
     UCameraComponent* AssignedCamera = Info.Camera.IsValid() ? Info.Camera->GetCameraComponent() : nullptr;
+
+    if (!AssignedCamera)
+    {
+        static int32 s_NoCamCount = 0;
+        if (++s_NoCamCount <= 5)
+            UE_LOG(LogRenderStreamPolicy, Warning, TEXT("[RS_TRACE] CalculateView: NO camera for viewport '%s', using origin"), *InViewport->GetId());
+    }
 
     InOutViewLocation = (AssignedCamera ? AssignedCamera->GetComponentLocation() : FVector::ZeroVector);
     InOutViewRotation = (AssignedCamera ? AssignedCamera->GetComponentRotation() : FRotator::ZeroRotator);
@@ -102,7 +161,9 @@ bool FRenderStreamProjectionPolicy::GetProjectionMatrix(class IDisplayClusterVie
 
     if (!AssignedCamera)
     {
-        UE_LOG(LogRenderStream, Error, TEXT("Failed to find camera assigned to viewport '%s'"), *ViewportId);
+        static int32 s_NoCamCount = 0;
+        if (++s_NoCamCount <= 5)
+            UE_LOG(LogRenderStreamPolicy, Error, TEXT("[RS_TRACE] GetProjectionMatrix: NO camera assigned to viewport '%s' — returning false"), *ViewportId);
         return false;
     }
 
@@ -154,6 +215,14 @@ bool FRenderStreamProjectionPolicy::GetProjectionMatrix(class IDisplayClusterVie
     FMatrix clippingMatrix = clippingTransform.ToMatrixWithScale();
 
     OutPrjMatrix = PrjMatrix * clippingMatrix;
+
+    {
+        static uint32 s_SuccessCount = 0;
+        if (++s_SuccessCount <= 5 || s_SuccessCount % 120 == 0)
+            UE_LOG(LogRenderStreamPolicy, Warning, TEXT("[RS_TRACE] GetProjectionMatrix: SUCCESS viewport='%s' cam='%s' pos=(%.1f,%.1f,%.1f)"),
+                *ViewportId, *AssignedCamera->GetOwner()->GetName(),
+                AssignedCamera->GetComponentLocation().X, AssignedCamera->GetComponentLocation().Y, AssignedCamera->GetComponentLocation().Z);
+    }
 
     return true;
 }

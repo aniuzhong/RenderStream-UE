@@ -780,7 +780,7 @@ void RenderStreamSceneSelector::ApplySkeletalPose(uint64_t specHash, size_t iPos
             return  error == RenderStreamLink::RS_ERROR_SUCCESS && nJoints == 0;
         };
 
-        int nJoints;
+        int nJoints = 0;
         if (const RenderStreamLink::RS_ERROR Err = RenderStreamLink::instance().rs_getSkeletonJointPoses(specHash, iPose, nullptr, &nJoints);
             isNotAssignedSkeleton(Err, nJoints))
         {
