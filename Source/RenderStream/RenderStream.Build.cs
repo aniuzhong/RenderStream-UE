@@ -12,7 +12,7 @@ public class RenderStream : ModuleRules
     {
         OptimizeCode = CodeOptimization.Never;
         PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
-        PublicDefinitions.Add("RS2_UE53_CUSTOM=1");
+        PublicDefinitions.Add("RS_UE_CUSTOM=1");
         PublicDependencyModuleNames.AddRange(
             new string[] 
             { 

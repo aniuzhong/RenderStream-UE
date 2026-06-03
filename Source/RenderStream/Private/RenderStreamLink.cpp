@@ -77,7 +77,7 @@ bool RenderStreamLink::loadExplicit()
             UE_LOG(LogRenderStream, Fatal, TEXT("RenderStream instance cannot launch, the app will exit to avoid other RenderStram errors during runtime. Reason: %s"), *msg);
     };
 
-#if RS2_UE53_CUSTOM
+#if RS_UE_CUSTOM
     // Customized version: load renderstream.dll from plugin directory
     TArray<FString> candidateDllPaths;
     if (TSharedPtr<IPlugin> RSPlugin = IPluginManager::Get().FindPlugin(TEXT("RenderStream-UE")); RSPlugin.IsValid())
