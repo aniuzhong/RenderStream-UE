@@ -346,7 +346,7 @@ void FAnimNode_RenderStreamSkeletonSource::InitialiseAnimationData(const RenderS
     {
         int mapped = 0; for (int i=0;i<SourceBoneCount;++i) if (SourceToMeshIndex[i]!=INDEX_NONE) mapped++;
         UE_LOG(LogRenderStream, Log, TEXT("%s: Cached %d remapped bones (source=%d mesh=%d mapped=%d)"),
-            *SkeletonName.ToString(), SourceBoneCount, MeshBoneCount, mapped);
+            *SkeletonName.ToString(), mapped, SourceBoneCount, MeshBoneCount, mapped);
         // Dump ALL mapped source→mesh bone positions.
         for (int si=0; si<SourceBoneCount; ++si) {
             FCompactPoseBoneIndex mi = SourceToMeshIndex[si];

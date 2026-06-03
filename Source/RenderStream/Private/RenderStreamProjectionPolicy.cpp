@@ -89,23 +89,23 @@ void FRenderStreamProjectionPolicy::HandleEndScene(class IDisplayClusterViewport
             for (TObjectIterator<UDisplayClusterConfigurationViewport> It; It; ++It)
             {
                 ++countViewport;
-                UE_LOG(LogRenderStreamPolicy, Warning, TEXT("[AUDIT] LIVE DisplayClusterViewport: %s Outer=%s Flags=0x%x IsPendingKill=%d"),
+                UE_LOG(LogRenderStreamPolicy, Warning, TEXT("[AUDIT] LIVE DisplayClusterViewport: %s Outer=%s Flags=0x%x"),
                     *It->GetName(), It->GetOuter() ? *It->GetOuter()->GetName() : TEXT("null"),
-                    static_cast<uint32>(It->GetFlags()), It->IsPendingKillOrUnreachable());
+                    static_cast<uint32>(It->GetFlags()));
             }
             for (TObjectIterator<APlayerController> It; It; ++It)
             {
                 ++countPC;
-                UE_LOG(LogRenderStreamPolicy, Warning, TEXT("[AUDIT] LIVE PlayerController: %s Outer=%s Flags=0x%x IsPendingKill=%d"),
+                UE_LOG(LogRenderStreamPolicy, Warning, TEXT("[AUDIT] LIVE PlayerController: %s Outer=%s Flags=0x%x"),
                     *It->GetName(), It->GetOuter() ? *It->GetOuter()->GetName() : TEXT("null"),
-                    static_cast<uint32>(It->GetFlags()), It->IsPendingKillOrUnreachable());
+                    static_cast<uint32>(It->GetFlags()));
             }
             for (TObjectIterator<ACameraActor> It; It; ++It)
             {
                 ++countCam;
-                UE_LOG(LogRenderStreamPolicy, Warning, TEXT("[AUDIT] LIVE CameraActor: %s Outer=%s Flags=0x%x IsPendingKill=%d"),
+                UE_LOG(LogRenderStreamPolicy, Warning, TEXT("[AUDIT] LIVE CameraActor: %s Outer=%s Flags=0x%x"),
                     *It->GetName(), It->GetOuter() ? *It->GetOuter()->GetName() : TEXT("null"),
-                    static_cast<uint32>(It->GetFlags()), It->IsPendingKillOrUnreachable());
+                    static_cast<uint32>(It->GetFlags()));
             }
             for (TObjectIterator<ULocalPlayer> It; It; ++It)
             {
