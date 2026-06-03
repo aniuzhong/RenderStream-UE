@@ -548,7 +548,8 @@ bool FRenderStreamModule::PopulateStreamPool()
 
                     if (UDisplayClusterConfigurationViewport* Viewport = ClusterNode->GetViewport(Name); Viewport)
                     {
-                        Viewport->Region = FDisplayClusterConfigurationRectangle(0, 0, Resolution.X, Resolution.Y);
+                        Viewport->Region.W = Resolution.X;
+                        Viewport->Region.H = Resolution.Y;
                     }
                 }
             }
