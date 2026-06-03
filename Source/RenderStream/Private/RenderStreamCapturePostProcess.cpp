@@ -102,15 +102,7 @@ void FRenderStreamCapturePostProcess::PerformPostProcessViewAfterWarpBlend_Rende
             }
             else
             {
-                // default values to avoid any math assertions in debug dlls
-                frameResponse.camera.nearZ = 0.1f;
-                frameResponse.camera.farZ = 1.f;
-                frameResponse.camera.sensorX = 1.f;
-                frameResponse.camera.sensorY = 1.f;
-                frameResponse.camera.focalLength = 1.f;
-                if (CallN <= 30)
-                    UE_LOG(LogRenderStreamPostProcess, Warning, TEXT("[RS_TRACE] Capture #%d: NO frameResponse for frameCounter=%llu — using defaults"),
-                        CallN, GFrameCounterRenderThread);
+                return; // No frame requested — skip GPU blit, RHI flush, and rs_sendFrame2
             }
         }
 

@@ -126,6 +126,9 @@ void FRenderStreamSyncFrameData::ControllerReceive()
             UE_LOG(LogRenderStream, Warning, TEXT("[RS_TRACE] ControllerReceive #%d: TIMEOUT"), CallN);
             TRACE_CPUPROFILER_EVENT_SCOPE(TEXT("FRenderStreamSyncFrameData::ControllerReceive() - timeout, setting new status message"));
             RenderStreamLink::instance().rs_setNewStatusMessage("Not requested");
+            // Throttle rendering while idle: set a large delta so UE doesn't run
+            // catch-up ticks for the time spent blocking in rs_awaitFrameData.
+            FApp::SetFixedDeltaTime(FPlatformTime::Seconds() - StartTime);
         }
         else
         {
