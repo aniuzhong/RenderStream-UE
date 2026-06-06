@@ -84,8 +84,6 @@ bool FRenderStreamSyncFrameData::Map(FArchive& Ar)
     return true;
 }
 
-static int32 g_ControllerReceiveCallCount = 0;
-
 void FRenderStreamSyncFrameData::ControllerReceive()
 {
     TRACE_CPUPROFILER_EVENT_SCOPE(TEXT("FRenderStreamSyncFrameData::ControllerReceive()"));
@@ -102,12 +100,8 @@ void FRenderStreamSyncFrameData::ControllerReceive()
     const RenderStreamLink::RS_ERROR Ret = RenderStreamLink::instance().rs_awaitFrameData(500, &m_frameData);
     FApp::SetUseFixedTimeStep(true);
 
-    ++g_ControllerReceiveCallCount;
-    const int32 CallN = g_ControllerReceiveCallCount;
-
     if (Ret == RenderStreamLink::RS_ERROR_STREAMS_CHANGED)
     {
-        UE_LOG(LogRenderStream, Warning, TEXT("[RS_TRACE] ControllerReceive #%d: STREAMS_CHANGED, calling PopulateStreamPool"), CallN);
         // Update the streams
         FRenderStreamModule* Module = FRenderStreamModule::Get();
         check(Module);
@@ -119,7 +113,6 @@ void FRenderStreamSyncFrameData::ControllerReceive()
     }
     else if (Ret == RenderStreamLink::RS_ERROR_QUIT)
     {
-        UE_LOG(LogRenderStream, Warning, TEXT("[RS_TRACE] ControllerReceive #%d: QUIT"), CallN);
         m_frameDataValid = false;
         m_isQuitting = true; // notify ndisplay followers that the application should quit.
         // we must defer the processing of this quit message until the next frame, because otherwise ndisplay won't synchronise this.
@@ -128,13 +121,12 @@ void FRenderStreamSyncFrameData::ControllerReceive()
     {
         if (Ret == RenderStreamLink::RS_ERROR_TIMEOUT)
         {
-            UE_LOG(LogRenderStream, Warning, TEXT("[RS_TRACE] ControllerReceive #%d: TIMEOUT"), CallN);
             TRACE_CPUPROFILER_EVENT_SCOPE(TEXT("FRenderStreamSyncFrameData::ControllerReceive() - timeout, setting new status message"));
             RenderStreamLink::instance().rs_setNewStatusMessage("Not requested");
         }
         else
         {
-            UE_LOG(LogRenderStream, Error, TEXT("[RS_TRACE] ControllerReceive #%d: ERROR code=%d"), CallN, (int32)Ret);
+            UE_LOG(LogRenderStream, Error, TEXT("Error awaiting frame data error %d"), Ret);
         }
         m_frameDataValid = false; // TODO: Mark timecode as invalid only after some multiple of the expected incoming framerate.
     }
@@ -155,23 +147,16 @@ void FRenderStreamSyncFrameData::ControllerReceive()
 
         if (DeltaSeconds <= 0.f)
         {
-            UE_LOG(LogRenderStream, Error, TEXT("[RS_TRACE] Negative delta time! tTracked: %f LastTrackedTime: %f"), m_frameData.tTracked, LastTrackedTime);
+            UE_LOG(LogRenderStream, Error, TEXT("Negative delta time! tTracked: %f LastTrackedTime: %f"), m_frameData.tTracked, LastTrackedTime);
             DeltaSeconds = static_cast<float>(m_frameData.frameRateDenominator) / m_frameData.frameRateNumerator;
         }
 
         LastTrackedTime = m_frameData.tTracked;
 
-        // 3600 x speed if written as below, which is a common mistake when frame rate is expressed as denominator over numerator.
-        // DeltaSeconds = static_cast<float>(m_frameData.frameRateNumerator) / m_frameData.frameRateDenominator;
-
         FApp::SetFixedDeltaTime(DeltaSeconds);
 
         m_frameDataValid = true;
         Apply();
-
-        if (CallN <= 10 || CallN % 60 == 0)
-            UE_LOG(LogRenderStream, Warning, TEXT("[RS_TRACE] ControllerReceive #%d: SUCCESS frame=%u scene=%u tTracked=%.4f delta=%.4f"),
-                CallN, GFrameCounter, m_frameData.scene, m_frameData.tTracked, DeltaSeconds);
     }
 
     AwaitTime = (FPlatformTime::Seconds() - StartTime) * 1000.f;

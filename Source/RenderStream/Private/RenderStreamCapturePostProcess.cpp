@@ -51,10 +51,6 @@ void FRenderStreamCapturePostProcess::HandleEndScene(IDisplayClusterViewportMana
 
 void FRenderStreamCapturePostProcess::PerformPostProcessViewAfterWarpBlend_RenderThread(FRHICommandListImmediate& RHICmdList, const IDisplayClusterViewportProxy* ViewportProxy) const
 {
-    static int32 s_CaptureCallCount = 0;
-    ++s_CaptureCallCount;
-    const int32 CallN = s_CaptureCallCount;
-
     if (!IsInCluster() || ViewportProxy == nullptr)
     {
         return;
@@ -66,25 +62,14 @@ void FRenderStreamCapturePostProcess::PerformPostProcessViewAfterWarpBlend_Rende
 
     auto Stream = Module->StreamPool->GetStream(ViewportId);
     // We can't create a stream on the render thread, so our only option is to not do anything if the stream doesn't exist here.
-    if (!Stream)
-    {
-        if (CallN <= 30)
-            UE_LOG(LogRenderStreamPostProcess, Warning, TEXT("[RS_TRACE] Capture #%d: viewport '%s' has NO stream in pool — skipping send"), CallN, *ViewportId);
-        return;
-    }
-
     if (Stream)
     {
-        if (CallN <= 30 || CallN % 120 == 0)
-            UE_LOG(LogRenderStreamPostProcess, Warning, TEXT("[RS_TRACE] Capture #%d: viewport='%s' stream='%s' channel='%s' resolution=%dx%d"),
-                CallN, *ViewportId, *Stream->Name(), *Stream->Channel(), Stream->Resolution().X, Stream->Resolution().Y);
-
         auto Size = ViewportProxy->GetRenderSettings_RenderThread().Rect.Size();
         if (Size.GetMin() <= 0)
         {
             auto Resolution = Stream->Resolution();
-            UE_LOG(LogRenderStream, Error, TEXT("[RS_TRACE] Capture #%d: Viewport '%s' has ZERO size %dx%d, expected %dx%d"),
-                CallN, *ViewportId, Size.X, Size.Y, Resolution.X, Resolution.Y);
+            UE_LOG(LogRenderStream, Error, TEXT("Viewport of zero size detected in '%s : %s' with id '%s' %dx%d, expected size %dx%d"),
+                *Stream->Name(), *Stream->Channel(), *ViewportId, Size.X, Size.Y, Resolution.X, Resolution.Y);
             return;
         }
 
@@ -96,9 +81,6 @@ void FRenderStreamCapturePostProcess::PerformPostProcessViewAfterWarpBlend_Rende
             {
                 frameResponse = Info.m_frameResponsesMap[GFrameCounterRenderThread];
                 Info.m_frameResponsesMap.erase(GFrameCounterRenderThread);
-                if (CallN <= 30)
-                    UE_LOG(LogRenderStreamPostProcess, Warning, TEXT("[RS_TRACE] Capture #%d: found frameResponse tTracked=%.4f camPos=(%.2f,%.2f,%.2f)"),
-                        CallN, frameResponse.tTracked, frameResponse.camera.x, frameResponse.camera.y, frameResponse.camera.z);
             }
             else
             {
@@ -114,35 +96,19 @@ void FRenderStreamCapturePostProcess::PerformPostProcessViewAfterWarpBlend_Rende
         if (policyType != FRenderStreamProjectionPolicy::RenderStreamPolicyType)
         {
             resourceType = EDisplayClusterViewportResourceType::AdditionalTargetableResource;
-            if (CallN <= 30)
-                UE_LOG(LogRenderStreamPostProcess, Warning, TEXT("[RS_TRACE] Capture #%d: policy type '%s' != renderstream, using AdditionalTargetableResource"),
-                    CallN, *policyType);
         }
         ViewportProxy->GetResourcesWithRects_RenderThread(resourceType, Resources, Rects);
         if (Resources.Num() != 1 || Rects.Num() != 1)
         {
-            UE_LOG(LogRenderStream, Error, TEXT("[RS_TRACE] Capture #%d: Missing viewport output for '%s' — Resources=%d Rects=%d"),
-                CallN, *ViewportId, Resources.Num(), Rects.Num());
+            UE_LOG(LogRenderStream, Error, TEXT("Missing viewport output in '%s : %s' with id '%s'"), *Stream->Name(), *Stream->Channel(), *ViewportId);
             return;
         }
-
-        if (CallN <= 30)
-            UE_LOG(LogRenderStreamPostProcess, Warning, TEXT("[RS_TRACE] Capture #%d: sending frame for '%s' resource=%p rect=(%d,%d,%d,%d)"),
-                CallN, *ViewportId, Resources[0], Rects[0].Min.X, Rects[0].Min.Y, Rects[0].Max.X, Rects[0].Max.Y);
 
         Stream->SendFrame_RenderingThread(RHICmdList, frameResponse, Resources[0], Rects[0]);
     }
 
     // Uncomment this to restore client display
     // InViewportProxy->ResolveResources(RHICmdList, EDisplayClusterViewportResourceType::InputShaderResource, InViewportProxy->GetOutputResourceType());
-
-    // Diagnostic: log render settings and output state for both viewports
-    {
-        const auto& Settings = ViewportProxy->GetRenderSettings_RenderThread();
-        if (CallN <= 30)
-            UE_LOG(LogRenderStreamPostProcess, Warning, TEXT("[RS_TRACE] Capture #%d: POST-CAPTURE viewport='%s' rect=(%d,%d,%d,%d)"),
-                CallN, *ViewportId, Settings.Rect.Min.X, Settings.Rect.Min.Y, Settings.Rect.Max.X, Settings.Rect.Max.Y);
-    }
 }
 
 FRenderStreamPostProcessFactory::BasePostProcessPtr FRenderStreamPostProcessFactory::Create(

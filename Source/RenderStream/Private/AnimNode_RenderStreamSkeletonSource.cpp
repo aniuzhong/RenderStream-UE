@@ -343,22 +343,8 @@ void FAnimNode_RenderStreamSkeletonSource::InitialiseAnimationData(const RenderS
             SourceNumberOfChildren[SourceParentBoneIndex] += 1;
         }
     }
-    {
-        int mapped = 0; for (int i=0;i<SourceBoneCount;++i) if (SourceToMeshIndex[i]!=INDEX_NONE) mapped++;
-        UE_LOG(LogRenderStream, Log, TEXT("%s: Cached %d remapped bones (source=%d mesh=%d mapped=%d)"),
-            *SkeletonName.ToString(), mapped, SourceBoneCount, MeshBoneCount, mapped);
-        // Dump ALL mapped source→mesh bone positions.
-        for (int si=0; si<SourceBoneCount; ++si) {
-            FCompactPoseBoneIndex mi = SourceToMeshIndex[si];
-            if (mi==INDEX_NONE) { UE_LOG(LogRenderStream, Log, TEXT("  [%d] %s -> UNMAPPED"), si, *SourceBoneNames[si].ToString()); continue; }
-            FTransform srcUE = SourceInitialPose[si];
-            FTransform meshLocal = OutPose[mi];
-            UE_LOG(LogRenderStream, Log, TEXT("  [%d] %s -> mesh[%d]: src=(%.1f,%.1f,%.1f) mesh=(%.1f,%.1f,%.1f)"),
-                si, *SourceBoneNames[si].ToString(), mi.GetInt(),
-                srcUE.GetTranslation().X, srcUE.GetTranslation().Y, srcUE.GetTranslation().Z,
-                meshLocal.GetTranslation().X, meshLocal.GetTranslation().Y, meshLocal.GetTranslation().Z);
-        }
-    }
+    UE_LOG(LogRenderStream, Verbose, TEXT("%s: Cached %d remapped bone names from static skeleton data "),
+        *SkeletonName.ToString(), SourceBoneCount);
 
     // We now go through and calculate any differences between the initial pose of the mesh, and the initial pose of the source data
     // Then we can account for these offsets when applying the live source frame data to the skeleton
@@ -512,23 +498,6 @@ void FAnimNode_RenderStreamSkeletonSource::BuildPoseFromAnimationData(const Rend
                 const FVector MeshPosition = OutPose[MeshIndex].GetTranslation();  // Position to apply for the initial mesh pose
                 OutPose[MeshIndex].SetTranslation(MeshPosition + SourcePosition);
             }
-        }
-    }
-    static int s_frame = 0;
-    ++s_frame;
-    if (s_frame <= 3) {
-        const FName SkeletonName = GetSkeletonParamName();
-        UE_LOG(LogRenderStream, Log, TEXT("%s: BuildPose #%d — first 4 bones:"),
-            *SkeletonName.ToString(), s_frame);
-        for (int si=0; si<SourceBoneCount && si<4; ++si) {
-            FCompactPoseBoneIndex mi = SourceToMeshIndex[si];
-            if (mi==INDEX_NONE) continue;
-            FTransform liveUE = ToUnrealTransform(Pose.joints[si].transform);
-            FTransform applied = OutPose[mi];
-            UE_LOG(LogRenderStream, Log, TEXT("  [%d] %s: live=(%.1f,%.1f,%.1f) applied=(%.1f,%.1f,%.1f)"),
-                si, *SourceBoneNames[si].ToString(),
-                liveUE.GetTranslation().X, liveUE.GetTranslation().Y, liveUE.GetTranslation().Z,
-                applied.GetTranslation().X, applied.GetTranslation().Y, applied.GetTranslation().Z);
         }
     }
     const FName SkeletonName = GetSkeletonParamName();
