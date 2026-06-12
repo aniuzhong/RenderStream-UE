@@ -166,6 +166,11 @@ static const FName DisplayClusterModuleName(TEXT("DisplayCluster"));
 
 void FRenderStreamModule::StartupModule()
 {
+#if RS_UE_CUSTOM
+    UE_LOG(LogRenderStream, Display, TEXT("=========================================="));
+    UE_LOG(LogRenderStream, Display, TEXT("=== RenderStream-UE customized version ==="));
+    UE_LOG(LogRenderStream, Display, TEXT("=========================================="));
+#endif
     if (FApp::CanEverRender() && FString("VulkanRHI") == FString(GetSelectedDynamicRHIModuleName(false)))
     {
         const TArray<const ANSICHAR*> ExtentionsToAdd{ 
@@ -280,6 +285,10 @@ void FRenderStreamModule::ShutdownModule()
     FWorldDelegates::OnStartGameInstance.RemoveAll(this);
     FCoreDelegates::GetApplicationWillTerminateDelegate().RemoveAll(this);
 
+    // Unregister the log output device before touching the DLL to prevent
+    // re-entrant calls into rs_logToD3 during rs_shutdown/FreeLibrary.
+    m_logDevice.Reset();
+
     // This function may be called during shutdown to clean up your module.  For modules that support dynamic reloading,
     // we call this function before unloading the module.
     if (!RenderStreamLink::instance ().unloadExplicit ())
@@ -310,6 +319,7 @@ void FRenderStreamModule::LoadSchemas(const UWorld& World)
 
 void FRenderStreamModule::ApplyScene(uint32_t sceneId)
 {
+    TRACE_CPUPROFILER_EVENT_SCOPE(TEXT("FRenderStreamModule::ApplyScene()"));
     check(m_sceneSelector != nullptr);
     m_sceneSelector->ApplyScene(*GWorld, sceneId);
 }
@@ -361,6 +371,8 @@ bool UpdateViewport(FFrameStreamPtr Stream)
 
 void FRenderStreamModule::ConfigureStream(FFrameStreamPtr Stream)
 {
+    TRACE_CPUPROFILER_EVENT_SCOPE(TEXT("FRenderStreamModule::ConfigureStream()"));
+
     FString const& Name = Stream->Name();
     if (!Stream)
     {
@@ -456,6 +468,8 @@ void FRenderStreamModule::ConfigureStream(FFrameStreamPtr Stream)
 
 bool FRenderStreamModule::PopulateStreamPool()
 {
+    TRACE_CPUPROFILER_EVENT_SCOPE(TEXT("FRenderStreamModule::PopulateStreamPool()"));
+
     if (!StreamPool) {
         UE_LOG(LogRenderStream, Log, TEXT("Abort populating stream pool, not initialized."));
         return false;
@@ -487,8 +501,20 @@ bool FRenderStreamModule::PopulateStreamPool()
 
         const RenderStreamLink::StreamDescriptions* header = nBytes >= sizeof(RenderStreamLink::StreamDescriptions) ? reinterpret_cast<const RenderStreamLink::StreamDescriptions*>(descMem.data()) : nullptr;
         const size_t numStreams = header ? header->nStreams : 0;
+
+        // Ensure MaxSplitscreenPlayers can accommodate all viewports (+1 for initial local player).
+        // Must be done BEFORE ConfigureStream so CreatePlayer won't hit the player count cap.
+        UGameInstance* GI = GWorld ? GWorld->GetGameInstance() : nullptr;
+        UGameViewportClient* VC = GI ? GI->GetGameViewportClient() : nullptr;
+        const int needed = static_cast<int>(numStreams) + 1;
+        const int floor = FMath::Max(16, needed);
+        if (VC && VC->MaxSplitscreenPlayers < floor)
+        {
+            VC->MaxSplitscreenPlayers = floor;
+        }
+
         TArray<FStreamInfo> streamInfoArray;
-        
+
         for (size_t i = 0; i < numStreams; ++i)
         {
             const RenderStreamLink::StreamDescription& description = header->streams[i];
@@ -545,7 +571,8 @@ bool FRenderStreamModule::PopulateStreamPool()
 
                     if (UDisplayClusterConfigurationViewport* Viewport = ClusterNode->GetViewport(Name); Viewport)
                     {
-                        Viewport->Region = FDisplayClusterConfigurationRectangle(0, 0, Resolution.X, Resolution.Y);
+                        Viewport->Region.W = Resolution.X;
+                        Viewport->Region.H = Resolution.Y;
                     }
                 }
             }
@@ -567,6 +594,8 @@ bool FRenderStreamModule::PopulateStreamPool()
 
 void FRenderStreamModule::ApplyCameras(const RenderStreamLink::FrameData& frameData)
 {
+    TRACE_CPUPROFILER_EVENT_SCOPE(TEXT("FRenderStreamModule::ApplyCameras()"));
+
     for (auto& pair  : ViewportInfos)
     {
         const FFrameStreamPtr stream = StreamPool->GetStream(pair.Key);
@@ -581,6 +610,8 @@ void FRenderStreamModule::ApplyCameras(const RenderStreamLink::FrameData& frameD
 
 void FRenderStreamModule::ApplyCameraData(FRenderStreamViewportInfo& info, const RenderStreamLink::FrameData& frameData, const RenderStreamLink::CameraData& cameraData)
 {
+    TRACE_CPUPROFILER_EVENT_SCOPE(TEXT("FRenderStreamModule::ApplyCameraData()"));
+
     // Each call must always have a frame response, because there will be a corresponding render call.
     {
         std::lock_guard<std::mutex> guard(info.m_frameResponsesLock);
@@ -771,13 +802,21 @@ void FRenderStreamModule::OnBeginFrame()
     if (IsController)
         m_syncFrame.ControllerReceive();
 
+    // Skip scene rendering entirely when idle (no frame requests from disguise).
+    // This is the main GPU savings — prevents UE from rendering all nDisplay viewports.
+    if (GEngine && GEngine->GameViewport)
+        GEngine->GameViewport->bDisableWorldRendering = !m_syncFrame.m_frameDataValid;
+
     const URenderStreamSettings* settings = GetDefault<URenderStreamSettings>();
 
     ADisplayClusterRootActor* const RootActor = IDisplayCluster::Get().GetGameMgr()->GetRootActor();
-    if (RootActor && settings->OCIOConfig.ColorConfiguration.ConfigurationSource != nullptr)
+    if (RootActor)
     {
-        RootActor->GetConfigData()->StageSettings.ViewportOCIO.AllViewportsOCIOConfiguration.bIsEnabled = true;
-        RootActor->GetConfigData()->StageSettings.ViewportOCIO.AllViewportsOCIOConfiguration.ColorConfiguration = settings->OCIOConfig.ColorConfiguration;
+        RootActor->GetConfigData()->StageSettings.ViewportOCIO.AllViewportsOCIOConfiguration.bIsEnabled = settings->OCIOConfig.bIsEnabled;
+        if(settings->OCIOConfig.bIsEnabled && settings->OCIOConfig.ColorConfiguration.ConfigurationSource != nullptr)
+        {
+           RootActor->GetConfigData()->StageSettings.ViewportOCIO.AllViewportsOCIOConfiguration.ColorConfiguration = settings->OCIOConfig.ColorConfiguration;
+        }
     }
 }
 

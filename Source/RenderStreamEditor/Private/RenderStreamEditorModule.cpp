@@ -40,9 +40,14 @@
 #include "FileHelpers.h"
 #include "GameMapsSettings.h"
 
+#include "Logging/MessageLog.h"
+#include "Misc/UObjectToken.h"
 #include "MessageLogInitializationOptions.h"
 #include "MessageLogModule.h"
 #include "IMessageLogListing.h"
+
+#include "DesktopPlatformModule.h"
+#include "IDesktopPlatform.h"
 
 DEFINE_LOG_CATEGORY(LogRenderStreamEditor);
 
@@ -77,6 +82,9 @@ void FRenderStreamEditorModule::StartupModule()
 
 
         PropertyModule.NotifyCustomizationModuleChanged();
+
+        UToolMenus::RegisterStartupCallback(FSimpleMulticastDelegate::FDelegate::CreateRaw(
+            this, &FRenderStreamEditorModule::RegisterToolBarButton));
     }
 
     FEditorDelegates::PostSaveExternalActors.AddRaw(this, &FRenderStreamEditorModule::OnPostSaveWorld);
@@ -433,6 +441,7 @@ void GenerateScene(
 {
     FString sceneName = Cache->GetName();
     SceneParameters.name = _strdup(TCHAR_TO_UTF8(*sceneName));
+    SceneParameters.hash = 0;
 
     const URenderStreamSettings* settings = GetDefault<URenderStreamSettings>();
     bool isStreamingLevelSceneSelector = settings->SceneSelector == ERenderStreamSceneSelector::StreamingLevels;
@@ -514,6 +523,15 @@ bool CheckOutLevelChannelCaches(TArray<ULevel*> Levels)
     return checkoutNotCancelled && allPackagesWriteable;
 }
 
+// Removes transient objects from the channel info in preparation to save the channel info into the cache
+void SanitizeChannelInfo(FRenderStreamChannelInfo& ChannelInfo)
+{
+    ChannelInfo.PostProcessSettings.WeightedBlendables.Array.RemoveAll([](const FWeightedBlendable& Blendable)
+    {
+        return Blendable.Object && Blendable.Object->IsA<UMaterialInstanceDynamic>();
+    });
+}
+
 URenderStreamChannelCacheAsset* UpdateLevelChannelCache(ULevel* Level)
 {
     URenderStreamChannelCacheAsset* Cache = GetOrCreateCache(Level);
@@ -523,6 +541,7 @@ URenderStreamChannelCacheAsset* UpdateLevelChannelCache(ULevel* Level)
     Cache->Level = LevelPath;
     Cache->Channels.Empty();
     Cache->ChannelInfoMap.Empty();
+    Cache->ChannelToActors.Empty();
     for (auto Actor : Level->Actors)
     {
         if (Actor)
@@ -531,8 +550,11 @@ URenderStreamChannelCacheAsset* UpdateLevelChannelCache(ULevel* Level)
             if (Definition.IsValid())
             {
                 FString ChannelName = TCHAR_TO_UTF8(*(Definition->GetChannelName()));
+                Cache->ChannelToActors.FindOrAdd(ChannelName).Add(Actor->GetName());
                 Cache->Channels.Emplace(ChannelName);
-                Cache->ChannelInfoMap.Emplace(ChannelName, FRenderStreamValidation::GetChannelInfo(Definition, Level));
+                FRenderStreamChannelInfo channelInfo = FRenderStreamValidation::GetChannelInfo(Definition, Level);
+                SanitizeChannelInfo(channelInfo);
+                Cache->ChannelInfoMap.Emplace(ChannelName, channelInfo);
             }
         }
     }
@@ -540,15 +562,22 @@ URenderStreamChannelCacheAsset* UpdateLevelChannelCache(ULevel* Level)
     Cache->ExposedParams.Empty();
     GenerateParameters(Cache->ExposedParams, Level->GetLevelScriptActor());
 
+    const URenderStreamSettings* settings = GetDefault<URenderStreamSettings>();
+
     // We can only know the sublevels of the persistent level.
     if (Level->IsPersistentLevel())
     {
         Cache->SubLevels.Empty();
-        for (ULevelStreaming* SubLevel : Level->GetWorld()->GetStreamingLevels())
+        
+        // Sublevels are not loaded when SceneSelector is None so they shouldn't be added to the cache
+        if (settings->SceneSelector != ERenderStreamSceneSelector::None)
         {
-            if (auto WorldAsset = SubLevel->GetWorldAsset())
+            for (ULevelStreaming* SubLevel : Level->GetWorld()->GetStreamingLevels())
             {
-                Cache->SubLevels.Add(WorldAsset->GetPackage()->GetPathName());
+                if (auto WorldAsset = SubLevel->GetWorldAsset())
+                {
+                    Cache->SubLevels.Add(WorldAsset->GetPackage()->GetPathName());
+                }
             }
         }
     }
@@ -867,6 +896,111 @@ void FRenderStreamEditorModule::GenerateAssetMetadata()
 
     ObjectLibrary->ClearLoaded();
     DeleteCaches(CachesForDelete);
+}
+
+FString FRenderStreamEditorModule::GetSelectedOutputFolder()
+{
+    FString selectedFolder;
+
+    // Let the user choose where to package the project
+    IDesktopPlatform* desktopPlatform = FDesktopPlatformModule::Get();
+
+    if (desktopPlatform)
+    {
+        const void* parentWindowHandle = FSlateApplication::Get().FindBestParentWindowHandleForDialogs(nullptr);
+        bool bFolderSelected = desktopPlatform->OpenDirectoryDialog(
+            parentWindowHandle,
+            TEXT("Select Output Folder"),
+            TEXT("C:/"),
+            selectedFolder
+        );
+
+        if (bFolderSelected)
+        {
+            UE_LOG(LogTemp, Log, TEXT("Selected folder: %s"), *selectedFolder);
+            return selectedFolder;
+        }
+        else
+        {
+            UE_LOG(LogTemp, Warning, TEXT("No folder selected."));
+        }
+    }
+
+    return FString();
+}
+
+void FRenderStreamEditorModule::RunPackageAndCopy()
+{
+    FString uatPath = FPaths::ConvertRelativePathToFull(FPaths::EngineDir() / TEXT("Build/BatchFiles/RunUAT.bat"));
+    FString projectPath = FPaths::ConvertRelativePathToFull(FPaths::GetProjectFilePath());
+    FString projectName = FApp::GetProjectName();
+    FString enginePath = FPaths::ConvertRelativePathToFull(FPaths::EngineDir() / TEXT("Binaries/Win64/UnrealEditor.exe"));
+
+    FString outputFolder = GetSelectedOutputFolder();
+
+    if(outputFolder == FString())
+        return;
+
+    FString arguments = FString::Printf(TEXT("Turnkey -command=VerifySdk -platform=Win64 -UpdateIfNeeded \
+        BuildCookRun -nop4 -utf8output -nocompileeditor -skipbuildeditor -cook -project=\"%s\" -target=%s -unrealexe=\"%s\" \
+        -platform=Win64 -installed -stage -archive -package -build -pak -iostore -compressed -prereqs \
+        -archivedirectory=\"%s\" -clientconfig=Development -nocompile -nocompileuat"),
+        *projectPath,
+        *projectName,
+        *enginePath,
+        *outputFolder);
+
+    FString errorOut;
+    int32 ReturnCode = 0;
+    UE_LOG(LogTemp, Log, TEXT("Packaging started..."));
+    bool bSuccess = FPlatformProcess::ExecProcess(*uatPath, *arguments, &ReturnCode, &errorOut, nullptr);
+    UE_LOG(LogTemp, Log, TEXT("Packaging complete..."));
+
+    if (bSuccess)
+    {
+        // Need to copy metadata over to new .exe location
+        FString filename = FString::Printf(TEXT("rs_%s.json"), FApp::GetProjectName());
+        FString source = FPaths::ProjectDir() / filename;
+        FString destination = outputFolder / FString::Printf(TEXT("Windows/%s/Binaries/Win64/%s"), FApp::GetProjectName(), *filename);
+
+        // Need to delete if exists because IPlatformFile::CopyFile will fail otherwise
+        if (FPaths::FileExists(destination))
+        {
+            IFileManager::Get().Delete(*destination);
+        }
+
+        IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+        bool copySuccess = PlatformFile.CopyFile(*destination, *source);
+
+        if (!copySuccess)
+        {
+            UE_LOG(LogTemp, Log, TEXT("Failed to copy the meatadata over!"));
+        }
+    }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("UAT proccess failed with error code: %s"), *errorOut);
+    }
+}
+
+void FRenderStreamEditorModule::RegisterToolBarButton()
+{
+    // Set current object as owner
+    FToolMenuOwnerScoped OwnerScoped(this);
+
+    // Will be added as an icon in the toolbar
+    UToolMenu* ToolbarMenu = UToolMenus::Get()->ExtendMenu("LevelEditor.LevelEditorToolBar.ModesToolBar");
+    FToolMenuSection& ToolbarSection = ToolbarMenu->FindOrAddSection("File");
+
+    ToolbarSection.AddEntry(FToolMenuEntry::InitToolBarButton(
+        TEXT("Package For RenderStream"),
+        FExecuteAction::CreateLambda([this]()
+        {
+            FRenderStreamEditorModule::RunPackageAndCopy();
+        }),
+        INVTEXT("Package For RenderStream"),
+        INVTEXT("Will build and package the project into an exe that can be used with RenderStream.")
+    ));
 }
 
 void FRenderStreamEditorModule::OnPostSaveWorldContext(UWorld* World, FObjectPostSaveContext context)

@@ -615,6 +615,14 @@ void URenderStreamViewportClient::Draw(FViewport* InViewport, FCanvas* SceneCanv
                 }
                 /// !!!! disguise customizations
 
+                const ACameraActor* Camera = Info.Template.Get();
+                const URenderStreamChannelDefinition* Definition = Camera ? Camera->FindComponentByClass<URenderStreamChannelDefinition>() : nullptr;
+
+                if (Definition != nullptr)
+                {
+                    ViewFamily.EngineShowFlags = Definition->ShowFlags;
+                }
+
                 // Calculate the player's view information.
                 FVector		ViewLocation;
                 FRotator	ViewRotation;
@@ -633,7 +641,7 @@ void URenderStreamViewportClient::Draw(FViewport* InViewport, FCanvas* SceneCanv
                     Views.Add(View);
 
                     /// !!!! disguise customizations
-                    UpdateView(&ViewFamily, View, Info);
+                    UpdateView(&ViewFamily, View, Info, Definition);
                     /// !!!! disguise customizations
 
                     // We don't allow instanced stereo currently
