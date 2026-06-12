@@ -621,8 +621,6 @@ void URenderStreamViewportClient::Draw(FViewport* InViewport, FCanvas* SceneCanv
                 {
                     ViewFamily.EngineShowFlags = Definition->ShowFlags;
                 }
-                /// !!!! disguise customizations
-
                 // Calculate the player's view information.
                 FVector		ViewLocation;
                 FRotator	ViewRotation;

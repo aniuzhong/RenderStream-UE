@@ -12,7 +12,7 @@ public class RenderStream : ModuleRules
     {
         OptimizeCode = CodeOptimization.Never;
         PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
-
+        PublicDefinitions.Add("RS_UE_CUSTOM=1");
         PublicDependencyModuleNames.AddRange(
             new string[] 
             { 
@@ -36,7 +36,8 @@ public class RenderStream : ModuleRules
                 "D3D11RHI", 
                 "D3D12RHI",
                 "VulkanRHI",
-                "RenderCore", 
+                "RenderCore",
+                "Renderer",
                 "Projects", 
                 "Json", 
                 "JsonUtilities", 

@@ -78,6 +78,11 @@
 #include "VulkanRHIPrivate.h"
 #include "VulkanResources.h"
 
+// Part of the workaround for RSP-379
+#include "FileMediaOutput.h"
+
+#include "OpenColorIORendering.h"
+
 DEFINE_LOG_CATEGORY(LogRenderStream);
 
 #define LOCTEXT_NAMESPACE "FRenderStreamModule"
@@ -166,6 +171,11 @@ static const FName DisplayClusterModuleName(TEXT("DisplayCluster"));
 
 void FRenderStreamModule::StartupModule()
 {
+#if RS_UE_CUSTOM
+    UE_LOG(LogRenderStream, Display, TEXT("=========================================="));
+    UE_LOG(LogRenderStream, Display, TEXT("=== RenderStream-UE customized version ==="));
+    UE_LOG(LogRenderStream, Display, TEXT("=========================================="));
+#endif
     if (FApp::CanEverRender() && FString("VulkanRHI") == FString(GetSelectedDynamicRHIModuleName(false)))
     {
         const TArray<const ANSICHAR*> ExtentionsToAdd{ 
@@ -271,6 +281,8 @@ void FRenderStreamModule::ShutdownModule()
                 UE_LOG(LogRenderStream, Warning, TEXT("An error occurred during un-registering the <%s> post process factory"), FRenderStreamPostProcessFactory::RenderStreamPostProcessType);
             }
         }
+
+        IDisplayCluster::Get().GetCallbacks().OnDisplayClusterUpdateViewportMediaState().RemoveAll(this);
     }
 
     FCoreUObjectDelegates::PostLoadMapWithWorld.RemoveAll(this);
@@ -279,6 +291,10 @@ void FRenderStreamModule::ShutdownModule()
 
     FWorldDelegates::OnStartGameInstance.RemoveAll(this);
     FCoreDelegates::GetApplicationWillTerminateDelegate().RemoveAll(this);
+
+    // Unregister the log output device before touching the DLL to prevent
+    // re-entrant calls into rs_logToD3 during rs_shutdown/FreeLibrary.
+    m_logDevice.Reset();
 
     // This function may be called during shutdown to clean up your module.  For modules that support dynamic reloading,
     // we call this function before unloading the module.
@@ -492,8 +508,20 @@ bool FRenderStreamModule::PopulateStreamPool()
 
         const RenderStreamLink::StreamDescriptions* header = nBytes >= sizeof(RenderStreamLink::StreamDescriptions) ? reinterpret_cast<const RenderStreamLink::StreamDescriptions*>(descMem.data()) : nullptr;
         const size_t numStreams = header ? header->nStreams : 0;
+
+        // Ensure MaxSplitscreenPlayers can accommodate all viewports (+1 for initial local player).
+        // Must be done BEFORE ConfigureStream so CreatePlayer won't hit the player count cap.
+        UGameInstance* GI = GWorld ? GWorld->GetGameInstance() : nullptr;
+        UGameViewportClient* VC = GI ? GI->GetGameViewportClient() : nullptr;
+        const int needed = static_cast<int>(numStreams) + 1;
+        const int floor = FMath::Max(16, needed);
+        if (VC && VC->MaxSplitscreenPlayers < floor)
+        {
+            VC->MaxSplitscreenPlayers = floor;
+        }
+
         TArray<FStreamInfo> streamInfoArray;
-        
+
         for (size_t i = 0; i < numStreams; ++i)
         {
             const RenderStreamLink::StreamDescription& description = header->streams[i];
@@ -550,7 +578,8 @@ bool FRenderStreamModule::PopulateStreamPool()
 
                     if (UDisplayClusterConfigurationViewport* Viewport = ClusterNode->GetViewport(Name); Viewport)
                     {
-                        Viewport->Region = FDisplayClusterConfigurationRectangle(0, 0, Resolution.X, Resolution.Y);
+                        Viewport->Region.W = Resolution.X;
+                        Viewport->Region.H = Resolution.Y;
                     }
                 }
             }
@@ -780,13 +809,44 @@ void FRenderStreamModule::OnBeginFrame()
     if (IsController)
         m_syncFrame.ControllerReceive();
 
-    const URenderStreamSettings* settings = GetDefault<URenderStreamSettings>();
+    // Skip scene rendering entirely when idle (no frame requests from disguise).
+    // This is the main GPU savings — prevents UE from rendering all nDisplay viewports.
+    if (GEngine && GEngine->GameViewport)
+        GEngine->GameViewport->bDisableWorldRendering = !m_syncFrame.m_frameDataValid;
 
-    ADisplayClusterRootActor* const RootActor = IDisplayCluster::Get().GetGameMgr()->GetRootActor();
-    if (RootActor && settings->OCIOConfig.ColorConfiguration.ConfigurationSource != nullptr)
+    const URenderStreamSettings* settings = GetDefault<URenderStreamSettings>();
+    
+    // Work around for RSP-376
+    // OCIO needs 2 things at runtime: compiled shader and the proper LUT textures
+    // Calling GetRenderPassResources allows us to retrieve a compiled shader and the neccessary textures
+    // We want to cache these because we want to avoid Unreal's default application of OCIO which is bugged as of 5.6
+    if (settings->OCIOConfig.bIsEnabled && settings->OCIOConfig.ColorConfiguration.ConfigurationSource != nullptr && GWorld && GWorld->Scene)
     {
-        RootActor->GetConfigData()->StageSettings.ViewportOCIO.AllViewportsOCIOConfiguration.bIsEnabled = true;
-        RootActor->GetConfigData()->StageSettings.ViewportOCIO.AllViewportsOCIOConfiguration.ColorConfiguration = settings->OCIOConfig.ColorConfiguration;
+        // Feature level refers to the shader model (SM5, SM6, etc.)
+        const ERHIFeatureLevel::Type FeatureLevel = GWorld->Scene->GetFeatureLevel();
+        FOpenColorIORenderPassResources Resources = FOpenColorIORendering::GetRenderPassResources(
+            settings->OCIOConfig.ColorConfiguration, 
+            FeatureLevel);
+
+        ENQUEUE_RENDER_COMMAND(CacheOCIOResources)(
+            [this, Resources, FeatureLevel](FRHICommandListImmediate& RHICmdList)
+            {
+                CachedOCIOResources = Resources;
+                CachedOCIOFeatureLevel = FeatureLevel;
+            }
+        );
+    }
+}
+
+// Triggered by nDisplay at the start of each frame
+void FRenderStreamModule::OnUpdateViewportMediaState(IDisplayClusterViewport* InViewport, EDisplayClusterViewportMediaState& InOutMediaState)
+{
+    // Since we are no longer setting the viewport OCIO config, nDisplay no longer disables tonemapper automatically
+    // Need to explicitly tell nDisplay that we want to apply OCIO independently at a later point
+    const URenderStreamSettings* Settings = GetDefault<URenderStreamSettings>();
+    if (Settings->OCIOConfig.ColorConfiguration.ConfigurationSource != nullptr)
+    {
+        InOutMediaState |= EDisplayClusterViewportMediaState::CaptureLateOCIO;
     }
 }
 
@@ -819,6 +879,8 @@ void FRenderStreamModule::OnModulesChanged(FName ModuleName, EModuleChangeReason
             }
         }
 
+        IDisplayCluster::Get().GetCallbacks().OnDisplayClusterUpdateViewportMediaState().AddRaw(
+            this, &FRenderStreamModule::OnUpdateViewportMediaState);
     }
 }
 

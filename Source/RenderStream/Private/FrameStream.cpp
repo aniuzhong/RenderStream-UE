@@ -12,6 +12,9 @@ FFrameStream::~FFrameStream()
 
 void FFrameStream::SendFrame_RenderingThread(FRHICommandListImmediate& RHICmdList, RenderStreamLink::CameraResponseData& FrameData, FRHITexture* SourceTexture, const FIntRect& ViewportRect)
 {
+    if (!m_bufTexture.IsValid())
+        return;
+
     float ULeft = (float)ViewportRect.Min.X / (float)SourceTexture->GetSizeX();
     float URight = (float)ViewportRect.Max.X / (float)SourceTexture->GetSizeX();
     float VTop = (float)ViewportRect.Min.Y / (float)SourceTexture->GetSizeY();
