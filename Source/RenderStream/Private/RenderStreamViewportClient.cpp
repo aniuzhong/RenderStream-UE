@@ -957,17 +957,14 @@ void URenderStreamViewportClient::Draw(FViewport* InViewport, FCanvas* SceneCanv
 }
 /// DisplayClusterViewportClient.cpp copy-pasta
 
-void URenderStreamViewportClient::UpdateView(FSceneViewFamily* ViewFamily, FSceneView* View, const FRenderStreamViewportInfo& Info)
+void URenderStreamViewportClient::UpdateView(FSceneViewFamily* ViewFamily, FSceneView* View, const FRenderStreamViewportInfo& Info, const URenderStreamChannelDefinition* Definition)
 {
     if (!Info.Template.IsValid())
         return;
 
     TSet<FPrimitiveComponentId> Collection;
-    const ACameraActor* Camera = Info.Template.Get();
-    const URenderStreamChannelDefinition* Definition = Camera ? Camera->FindComponentByClass<URenderStreamChannelDefinition>() : nullptr;
     if (Definition != nullptr)
     {
-        EngineShowFlags = Definition->ShowFlags;
         ViewFamily->EngineShowFlags = Definition->ShowFlags;
         View->bCameraMotionBlur = Definition->ShowFlags.MotionBlur;
         const TSet<TSoftObjectPtr<AActor>> Actors = Definition->DefaultVisibility == EChannelVisibilty::Visible ? Definition->Hidden : Definition->Visible;
