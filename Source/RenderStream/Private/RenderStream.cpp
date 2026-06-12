@@ -78,6 +78,11 @@
 #include "VulkanRHIPrivate.h"
 #include "VulkanResources.h"
 
+// Part of the workaround for RSP-379
+#include "FileMediaOutput.h"
+
+#include "OpenColorIORendering.h"
+
 DEFINE_LOG_CATEGORY(LogRenderStream);
 
 #define LOCTEXT_NAMESPACE "FRenderStreamModule"
@@ -276,6 +281,8 @@ void FRenderStreamModule::ShutdownModule()
                 UE_LOG(LogRenderStream, Warning, TEXT("An error occurred during un-registering the <%s> post process factory"), FRenderStreamPostProcessFactory::RenderStreamPostProcessType);
             }
         }
+
+        IDisplayCluster::Get().GetCallbacks().OnDisplayClusterUpdateViewportMediaState().RemoveAll(this);
     }
 
     FCoreUObjectDelegates::PostLoadMapWithWorld.RemoveAll(this);
@@ -808,15 +815,38 @@ void FRenderStreamModule::OnBeginFrame()
         GEngine->GameViewport->bDisableWorldRendering = !m_syncFrame.m_frameDataValid;
 
     const URenderStreamSettings* settings = GetDefault<URenderStreamSettings>();
-
-    ADisplayClusterRootActor* const RootActor = IDisplayCluster::Get().GetGameMgr()->GetRootActor();
-    if (RootActor)
+    
+    // Work around for RSP-376
+    // OCIO needs 2 things at runtime: compiled shader and the proper LUT textures
+    // Calling GetRenderPassResources allows us to retrieve a compiled shader and the neccessary textures
+    // We want to cache these because we want to avoid Unreal's default application of OCIO which is bugged as of 5.6
+    if (settings->OCIOConfig.bIsEnabled && settings->OCIOConfig.ColorConfiguration.ConfigurationSource != nullptr && GWorld && GWorld->Scene)
     {
-        RootActor->GetConfigData()->StageSettings.ViewportOCIO.AllViewportsOCIOConfiguration.bIsEnabled = settings->OCIOConfig.bIsEnabled;
-        if(settings->OCIOConfig.bIsEnabled && settings->OCIOConfig.ColorConfiguration.ConfigurationSource != nullptr)
-        {
-           RootActor->GetConfigData()->StageSettings.ViewportOCIO.AllViewportsOCIOConfiguration.ColorConfiguration = settings->OCIOConfig.ColorConfiguration;
-        }
+        // Feature level refers to the shader model (SM5, SM6, etc.)
+        const ERHIFeatureLevel::Type FeatureLevel = GWorld->Scene->GetFeatureLevel();
+        FOpenColorIORenderPassResources Resources = FOpenColorIORendering::GetRenderPassResources(
+            settings->OCIOConfig.ColorConfiguration, 
+            FeatureLevel);
+
+        ENQUEUE_RENDER_COMMAND(CacheOCIOResources)(
+            [this, Resources, FeatureLevel](FRHICommandListImmediate& RHICmdList)
+            {
+                CachedOCIOResources = Resources;
+                CachedOCIOFeatureLevel = FeatureLevel;
+            }
+        );
+    }
+}
+
+// Triggered by nDisplay at the start of each frame
+void FRenderStreamModule::OnUpdateViewportMediaState(IDisplayClusterViewport* InViewport, EDisplayClusterViewportMediaState& InOutMediaState)
+{
+    // Since we are no longer setting the viewport OCIO config, nDisplay no longer disables tonemapper automatically
+    // Need to explicitly tell nDisplay that we want to apply OCIO independently at a later point
+    const URenderStreamSettings* Settings = GetDefault<URenderStreamSettings>();
+    if (Settings->OCIOConfig.ColorConfiguration.ConfigurationSource != nullptr)
+    {
+        InOutMediaState |= EDisplayClusterViewportMediaState::CaptureLateOCIO;
     }
 }
 
@@ -849,6 +879,8 @@ void FRenderStreamModule::OnModulesChanged(FName ModuleName, EModuleChangeReason
             }
         }
 
+        IDisplayCluster::Get().GetCallbacks().OnDisplayClusterUpdateViewportMediaState().AddRaw(
+            this, &FRenderStreamModule::OnUpdateViewportMediaState);
     }
 }
 
