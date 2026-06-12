@@ -621,16 +621,6 @@ void URenderStreamViewportClient::Draw(FViewport* InViewport, FCanvas* SceneCanv
                 {
                     ViewFamily.EngineShowFlags = Definition->ShowFlags;
                 }
-                /// !!!! disguise customizations
-
-                const ACameraActor* Camera = Info.Template.Get();
-                const URenderStreamChannelDefinition* Definition = Camera ? Camera->FindComponentByClass<URenderStreamChannelDefinition>() : nullptr;
-
-                if (Definition != nullptr)
-                {
-                    ViewFamily.EngineShowFlags = Definition->ShowFlags;
-                }
-
                 // Calculate the player's view information.
                 FVector		ViewLocation;
                 FRotator	ViewRotation;
