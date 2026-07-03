@@ -842,6 +842,8 @@ void FRenderStreamModule::OnBeginFrame()
     // The types are just random ones I picked
     // Epic is aware of this and is planning to fix it in 5.7.1
     ADisplayClusterRootActor* const RootActor = IDisplayCluster::Get().GetGameMgr()->GetRootActor();
+    if (!RootActor)
+        return;
     if (RootActor->GetConfigData()->GetNode(ClusterMgr->GetNodeId())->MediaSettings.MediaOutputs.Num() == 0)
     {
         TObjectPtr<UFileMediaOutput> MediaOutput = NewObject<UFileMediaOutput>(GetTransientPackage());

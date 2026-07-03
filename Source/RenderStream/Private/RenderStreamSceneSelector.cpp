@@ -483,17 +483,21 @@ void RenderStreamSceneSelector::ApplyParameters(uint32_t sceneId, const TArray<A
     std::vector<float> floatValues(nFloatParams);
     std::vector<RenderStreamLink::ImageFrameData> imageValues(nImageParams);
 
-    RenderStreamLink::RS_ERROR res = RenderStreamLink::instance().rs_getFrameParameters(params.hash, floatValues.data(), floatValues.size() * sizeof(float));
+    RenderStreamLink::RS_ERROR res = RenderStreamLink::RS_ERROR_SUCCESS;
+    if (nFloatParams > 0)
+        res = RenderStreamLink::instance().rs_getFrameParameters(params.hash, floatValues.data(), floatValues.size() * sizeof(float));
     if (res != RenderStreamLink::RS_ERROR_SUCCESS)
     {
         UE_LOG(LogRenderStream, Error, TEXT("Unable to get float frame parameters - %d"), res);
         return;
     }
-    res = RenderStreamLink::instance().rs_getFrameImageData(params.hash, imageValues.data(), imageValues.size());
-    if (res != RenderStreamLink::RS_ERROR_SUCCESS)
-    {
-        UE_LOG(LogRenderStream, Error, TEXT("Unable to get image frame parameters - %d"), res);
-        return;
+    if (nImageParams > 0) {
+        res = RenderStreamLink::instance().rs_getFrameImageData(params.hash, imageValues.data(), imageValues.size());
+        if (res != RenderStreamLink::RS_ERROR_SUCCESS)
+        {
+            UE_LOG(LogRenderStream, Error, TEXT("Unable to get image frame parameters - %d"), res);
+            return;
+        }
     }
 
     // These are updated by ApplyParameters to allow each actor to operate on the next set of data.
@@ -863,7 +867,7 @@ void RenderStreamSceneSelector::ApplySkeletalPose(uint64_t specHash, size_t iPos
 
         newLayout.jointNames.SetNum(nJoints);
         for (int32 i = 0; i < newLayout.jointNames.Num(); ++i)
-            newLayout.jointNames[i] = FString(jointNames[i].c_str());
+            newLayout.jointNames[i] = FString(jointNamesCStrings[i]);
         newLayout.version = rsLayout.version;
         Layout = &m_skeletalLayoutCache.Emplace(Pose.layoutId, newLayout);
     }

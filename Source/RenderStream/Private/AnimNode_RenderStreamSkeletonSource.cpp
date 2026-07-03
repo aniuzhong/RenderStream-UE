@@ -330,12 +330,9 @@ void FAnimNode_RenderStreamSkeletonSource::InitialiseAnimationData(const RenderS
 
         // Find equivalent mesh bone name and index for current source bone
         FCompactPoseBoneIndex MeshIndex(INDEX_NONE);
-        if (BoneNameMap.Contains(SourceBoneName))
-        {
-            const FName MeshBoneName = BoneNameMap[SourceBoneName];
-            const int32 ReferenceMeshIndex = BoneContainerRef.GetPoseBoneIndexForBoneName(MeshBoneName);
-            MeshIndex = BoneContainerRef.MakeCompactPoseIndex(FMeshPoseBoneIndex(ReferenceMeshIndex));
-        }
+        const FName MeshBoneName = BoneNameMap.Contains(SourceBoneName) ? BoneNameMap[SourceBoneName] : SourceBoneName;
+        const int32 ReferenceMeshIndex = BoneContainerRef.GetPoseBoneIndexForBoneName(MeshBoneName);
+        MeshIndex = BoneContainerRef.MakeCompactPoseIndex(FMeshPoseBoneIndex(ReferenceMeshIndex));
 
         // Populate mappings between indices and number of children
         if (MeshIndex != INDEX_NONE)
